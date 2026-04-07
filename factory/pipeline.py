@@ -270,72 +270,41 @@ def _run_commit(config, story_id, spec_file, story_dir, log_dir, state):
     # Stage all changes
     subprocess.run(["git", "add", "-A"], cwd=project_dir, check=True)
 
-    # Get diff stat and full diff for commit message generation
+    # Get diff stat (compact, not the full diff)
     diff_stat = subprocess.run(
         ["git", "diff", "--cached", "--stat"],
         cwd=project_dir, capture_output=True, text=True,
     ).stdout.strip()
 
-    diff_text = subprocess.run(
-        ["git", "diff", "--cached"],
-        cwd=project_dir, capture_output=True, text=True,
-    ).stdout
-
-    # Truncate diff to avoid huge prompts
-    if len(diff_text) > 8000:
-        diff_text = diff_text[:8000] + "\n... (truncated)"
-
-    # Use Claude to generate a meaningful commit message
-    spec_text = spec_file.read_text()
-    results_text = ""
-    results_file = story_dir / "results.md"
-    if results_file.exists():
-        results_text = results_file.read_text()[:2000]
+    # Build a lean prompt — spec title + diff stat only, no full diff
+    spec_title = spec_file.read_text().split("\n")[0].lstrip("# ").strip()
 
     commit_msg_file = story_dir / "commit_msg.txt"
     prompt = (
-        "Write a git commit message for the following changes.\n\n"
-        "Rules:\n"
-        "- First line: concise subject (max 72 chars) in imperative mood, no period\n"
-        "- Second line: blank\n"
-        "- Body: explain WHAT was implemented and WHY, not HOW\n"
-        f"- Last line of the body MUST be exactly: Story: {story_id}\n"
-        "- Do NOT reference the story anywhere else in the message\n"
-        "- Do NOT use prefixes like SPEC-xxx, feat:, or fix: in the subject\n"
-        "- Do NOT use generic messages like 'implement feature' — be specific\n"
-        "- Do NOT include the diff itself in the message\n"
-        "- Wrap body lines at 72 characters\n"
-        f"- Write the commit message to: {commit_msg_file}\n\n"
-        "Example format:\n"
-        "```\n"
-        "Add YAML serialization with bare state shorthand support\n"
-        "\n"
-        "Implement YAML deserialization supporting two formats: bare state\n"
-        "shorthand and explicit format with kind field. Add directory loading\n"
-        "that recursively parses .yaml/.yml files into a StateSet.\n"
-        "\n"
-        f"Story: {story_id}\n"
-        "```\n\n"
-        f"## Story ID: {story_id}\n\n"
-        f"## Specification\n\n{spec_text}\n\n"
-        f"## Diff stat\n\n```\n{diff_stat}\n```\n\n"
-        f"## Diff\n\n```diff\n{diff_text}\n```\n\n"
+        "Write a git commit message to the file specified below. "
+        "Output ONLY the commit message file, nothing else.\n\n"
+        "Format:\n"
+        "- Line 1: subject (max 72 chars, imperative mood, no period, no prefix)\n"
+        "- Line 2: blank\n"
+        "- Body: 2-4 sentences explaining what was implemented and why\n"
+        f"- Last line: Story: {story_id}\n\n"
+        f"Spec title: {spec_title}\n\n"
+        f"Diff stat:\n```\n{diff_stat}\n```\n\n"
+        f"Write to: {commit_msg_file}\n"
     )
-    if results_text:
-        prompt += f"## Results\n\n{results_text}\n"
 
     success, usage = run_claude(
         prompt=prompt,
         log_file=log_dir / "commit.log",
         model=config.fast_model,
-        max_turns=config.max_turns,
+        max_turns=5,
         workdir=config.workspace,
         claude_cmd=config.claude_cmd,
         skip_permissions=config.skip_permissions,
         verbose=config.verbose,
     )
 
-    if usage.input_tokens or usage.output_tokens:
+    if usage.input_tokens or usage.output_tokens or usage.cache_creation_tokens or usage.cache_read_tokens:
         state.add_cost(
             story_id, "commit", usage.input_tokens, usage.output_tokens,
             cache_creation_tokens=usage.cache_creation_tokens,
@@ -343,13 +312,12 @@ def _run_commit(config, story_id, spec_file, story_dir, log_dir, state):
             model=config.fast_model,
         )
 
-    # Read generated commit message, or fall back to a basic one
+    # Read generated commit message, or fall back
     if commit_msg_file.exists():
         commit_msg = commit_msg_file.read_text().strip()
     else:
-        spec_title = spec_text.split("\n")[0].lstrip("# ").strip()
-        commit_msg = f"feat({story_id}): {spec_title}\n\nStory: {story_id}"
-        log.warn(f"[{story_id}] Commit: Claude did not produce commit message, using fallback")
+        commit_msg = f"{spec_title}\n\nStory: {story_id}"
+        log.warn(f"[{story_id}] Commit: LLM did not produce message, using fallback")
 
     result = subprocess.run(
         ["git", "commit", "-q", "-m", commit_msg],
