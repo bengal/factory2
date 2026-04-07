@@ -1,0 +1,149 @@
+import fcntl
+import hashlib
+import json
+from datetime import datetime
+from pathlib import Path
+
+
+class State:
+    def __init__(self, workspace: Path):
+        self.path = workspace / "state.json"
+        self.lock_path = workspace / "state.json.lock"
+        if not self.path.exists():
+            self._write_raw({"stories": {}})
+
+    def _read(self) -> dict:
+        with open(self.lock_path, "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_SH)
+            try:
+                return json.loads(self.path.read_text())
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
+    def _write_raw(self, data: dict):
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=2))
+        tmp.rename(self.path)
+
+    def _update(self, fn):
+        with open(self.lock_path, "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                data = json.loads(self.path.read_text())
+                fn(data)
+                tmp = self.path.with_suffix(".tmp")
+                tmp.write_text(json.dumps(data, indent=2))
+                tmp.rename(self.path)
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
+    def _ensure_story(self, data: dict, story_id: str) -> dict:
+        return data.setdefault("stories", {}).setdefault(story_id, {})
+
+    # ── Story status ─────────────────────────────────────────────
+
+    def get_story_status(self, story_id: str) -> str:
+        data = self._read()
+        return data.get("stories", {}).get(story_id, {}).get("status", "pending")
+
+    def set_story_status(self, story_id: str, status: str):
+        def update(data):
+            self._ensure_story(data, story_id)["status"] = status
+        self._update(update)
+
+    # ── Phase status ─────────────────────────────────────────────
+
+    def get_phase_status(self, story_id: str, phase: str) -> str:
+        data = self._read()
+        return (
+            data.get("stories", {})
+            .get(story_id, {})
+            .get("phases", {})
+            .get(phase, {})
+            .get("status", "pending")
+        )
+
+    def set_phase_status(self, story_id: str, phase: str, status: str):
+        ts = datetime.now().isoformat()
+
+        def update(data):
+            story = self._ensure_story(data, story_id)
+            story.setdefault("phases", {})[phase] = {
+                "status": status,
+                "timestamp": ts,
+            }
+        self._update(update)
+
+    # ── Spec hash ────────────────────────────────────────────────
+
+    def get_spec_hash(self, story_id: str) -> str:
+        data = self._read()
+        return data.get("stories", {}).get(story_id, {}).get("spec_hash", "")
+
+    def set_spec_hash(self, story_id: str, hash_val: str):
+        def update(data):
+            self._ensure_story(data, story_id)["spec_hash"] = hash_val
+        self._update(update)
+
+    # ── Quarantine / skip ────────────────────────────────────────
+
+    def quarantine(self, story_id: str, reason: str):
+        ts = datetime.now().isoformat()
+
+        def update(data):
+            story = self._ensure_story(data, story_id)
+            story["status"] = "quarantined"
+            story["quarantine_reason"] = reason
+            story["quarantined_at"] = ts
+        self._update(update)
+
+    def skip(self, story_id: str, reason: str):
+        def update(data):
+            story = self._ensure_story(data, story_id)
+            story["status"] = "skipped"
+            story["skip_reason"] = reason
+        self._update(update)
+
+    # ── Cost tracking ────────────────────────────────────────────
+
+    def add_cost(
+        self, story_id: str, phase: str,
+        input_tokens: int, output_tokens: int,
+        cache_creation_tokens: int = 0, cache_read_tokens: int = 0,
+        model: str = "",
+    ):
+        def update(data):
+            story = self._ensure_story(data, story_id)
+            costs = story.setdefault("costs", {})
+            pc = costs.setdefault(phase, {
+                "input_tokens": 0, "output_tokens": 0,
+                "cache_creation_tokens": 0, "cache_read_tokens": 0,
+            })
+            pc["input_tokens"] += input_tokens
+            pc["output_tokens"] += output_tokens
+            pc["cache_creation_tokens"] = pc.get("cache_creation_tokens", 0) + cache_creation_tokens
+            pc["cache_read_tokens"] = pc.get("cache_read_tokens", 0) + cache_read_tokens
+            if model:
+                pc["model"] = model
+        self._update(update)
+
+    def get_total_costs(self) -> dict:
+        """Return token counts summed across all stories."""
+        data = self._read()
+        totals = {"input_tokens": 0, "output_tokens": 0, "cache_creation_tokens": 0, "cache_read_tokens": 0}
+        for story in data.get("stories", {}).values():
+            for phase_cost in story.get("costs", {}).values():
+                for key in totals:
+                    totals[key] += phase_cost.get(key, 0)
+        return totals
+
+
+def spec_hash(spec_file: Path) -> str:
+    return hashlib.sha256(spec_file.read_bytes()).hexdigest()
+
+
+def specs_combined_hash(specs_dir: Path) -> str:
+    h = hashlib.sha256()
+    for f in sorted(specs_dir.glob("*.md")):
+        h.update(f.read_bytes())
+    return h.hexdigest()
