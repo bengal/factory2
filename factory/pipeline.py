@@ -1,0 +1,369 @@
+import subprocess
+from pathlib import Path
+
+from . import cargo, log
+from .config import Config
+from .context import generate_context
+from .runner import run_claude
+from .state import State
+
+
+def run_story_pipeline(config: Config, story_id: str, spec_file: Path, state: State) -> bool:
+    """Run all phases for a story. Returns True on success."""
+    story_dir = config.stories_dir / story_id
+    log_dir = story_dir / "log"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    log.phase(f"[{story_id}] Starting pipeline")
+
+    phases = [
+        ("understand", _run_understand),
+        ("plan", _run_plan),
+        ("implement", _run_implement),
+        ("write_tests", _run_write_tests),
+        ("verify", _run_verify),
+    ]
+
+    for phase_name, phase_fn in phases:
+        if not phase_fn(config, story_id, spec_file, story_dir, log_dir, state):
+            log.error(f"[{story_id}] Phase '{phase_name}' failed")
+            return False
+
+    # Commit (non-fatal)
+    if not _run_commit(config, story_id, spec_file, story_dir, log_dir, state):
+        log.warn(f"[{story_id}] Commit failed (non-fatal)")
+
+    log.info(f"[{story_id}] Pipeline complete")
+    return True
+
+
+# ── Phase helpers ────────────────────────────────────────────────
+
+
+def _phase_done(state: State, story_id: str, phase: str, output_file: Path | None = None) -> bool:
+    """Check if a phase is already done. Optionally require output file exists."""
+    if state.get_phase_status(story_id, phase) != "done":
+        return False
+    if output_file and not output_file.exists():
+        return False
+    log.info(f"[{story_id}] {phase}: already done, skipping")
+    return True
+
+
+def _run_phase(
+    config: Config,
+    state: State,
+    story_id: str,
+    phase: str,
+    prompt: str,
+    log_file: Path,
+    model: str,
+    max_turns: int,
+    output_file: Path | None = None,
+    post_check: callable = None,
+) -> bool:
+    """Generic phase runner. Returns True on success."""
+    state.set_phase_status(story_id, phase, "running")
+    log.info(f"[{story_id}] {phase}: starting")
+
+    success, usage = run_claude(
+        prompt=prompt,
+        log_file=log_file,
+        model=model,
+        max_turns=max_turns,
+        workdir=config.workspace,
+        claude_cmd=config.claude_cmd,
+        skip_permissions=config.skip_permissions,
+        verbose=config.verbose,
+    )
+
+    # Track costs
+    if usage.input_tokens or usage.output_tokens or usage.cache_creation_tokens or usage.cache_read_tokens:
+        state.add_cost(
+            story_id, phase, usage.input_tokens, usage.output_tokens,
+            cache_creation_tokens=usage.cache_creation_tokens,
+            cache_read_tokens=usage.cache_read_tokens,
+            model=model,
+        )
+
+    if not success:
+        state.set_phase_status(story_id, phase, "failed")
+        return False
+
+    # Check output file was created
+    if output_file and not output_file.exists():
+        log.error(f"[{story_id}] {phase}: Claude ran but did not produce {output_file}")
+        state.set_phase_status(story_id, phase, "failed")
+        return False
+
+    # Run optional post-check (e.g., cargo check)
+    if post_check and not post_check():
+        log.warn(f"[{story_id}] {phase}: post-check failed")
+        state.set_phase_status(story_id, phase, "failed")
+        return False
+
+    state.set_phase_status(story_id, phase, "done")
+    log.info(f"[{story_id}] {phase}: complete")
+    return True
+
+
+# ── Phase implementations ────────────────────────────────────────
+
+
+def _run_understand(config, story_id, spec_file, story_dir, log_dir, state):
+    output_file = story_dir / "understand.md"
+    if _phase_done(state, story_id, "understand", output_file):
+        return True
+
+    template = (config.prompts_dir / "understand.md").read_text()
+    context = generate_context(config)
+    prompt = (
+        f"{template}\n\n"
+        f"## Your Task\n\n"
+        f"- Story ID: {story_id}\n"
+        f"- Write your analysis to: {output_file}\n"
+        f"- The project code is in: {config.project_dir}/\n\n"
+        f"{context}"
+        f"## Specification\n\n{spec_file.read_text()}"
+    )
+
+    return _run_phase(
+        config, state, story_id, "understand", prompt,
+        log_dir / "understand.log", config.default_model, config.max_turns,
+        output_file=output_file,
+    )
+
+
+def _run_plan(config, story_id, spec_file, story_dir, log_dir, state):
+    output_file = story_dir / "plan.md"
+    understand_file = story_dir / "understand.md"
+    if _phase_done(state, story_id, "plan", output_file):
+        return True
+
+    template = (config.prompts_dir / "plan.md").read_text()
+    context = generate_context(config)
+    prompt = (
+        f"{template}\n\n"
+        f"## Your Task\n\n"
+        f"- Story ID: {story_id}\n"
+        f"- Write your plan to: {output_file}\n"
+        f"- The project code is in: {config.project_dir}/\n\n"
+        f"{context}"
+        f"## Specification\n\n{spec_file.read_text()}\n\n"
+        f"## Understanding (from previous analysis)\n\n{understand_file.read_text()}"
+    )
+
+    return _run_phase(
+        config, state, story_id, "plan", prompt,
+        log_dir / "plan.log", config.strong_model, config.max_turns,
+        output_file=output_file,
+    )
+
+
+def _run_implement(config, story_id, spec_file, story_dir, log_dir, state):
+    if _phase_done(state, story_id, "implement"):
+        return True
+
+    plan_file = story_dir / "plan.md"
+    template = (config.prompts_dir / "implement.md").read_text()
+    context = generate_context(config)
+    prompt = (
+        f"{template}\n\n"
+        f"## Your Task\n\n"
+        f"- Story ID: {story_id}\n"
+        f"- The project code is in: {config.project_dir}/\n"
+        f"- Work inside the project directory. Create or modify files as needed.\n\n"
+        f"{context}"
+        f"## Specification\n\n{spec_file.read_text()}\n\n"
+        f"## Implementation Plan\n\n{plan_file.read_text()}"
+    )
+
+    def cargo_check():
+        result = cargo.check(config.project_dir)
+        if not result.success:
+            log.warn(f"[{story_id}] implement: cargo check failed — {result.summary()}")
+            if result.format_errors():
+                log.warn(result.format_errors())
+        return result.success
+
+    return _run_phase(
+        config, state, story_id, "implement", prompt,
+        log_dir / "implement.log", config.strong_model, config.max_turns,
+        post_check=cargo_check,
+    )
+
+
+def _run_write_tests(config, story_id, spec_file, story_dir, log_dir, state):
+    if _phase_done(state, story_id, "write_tests"):
+        return True
+
+    template = (config.prompts_dir / "write_tests.md").read_text()
+    context = generate_context(config)
+    prompt = (
+        f"{template}\n\n"
+        f"## Your Task\n\n"
+        f"- Story ID: {story_id}\n"
+        f"- The project code is in: {config.project_dir}/\n"
+        f"- Write tests that validate the acceptance criteria in the specification\n\n"
+        f"{context}"
+        f"## Specification\n\n{spec_file.read_text()}"
+    )
+
+    def cargo_check_tests():
+        result = cargo.check(config.project_dir, tests=True)
+        if not result.success:
+            log.warn(f"[{story_id}] write_tests: cargo check --tests failed — {result.summary()}")
+            if result.format_errors():
+                log.warn(result.format_errors())
+        return result.success
+
+    return _run_phase(
+        config, state, story_id, "write_tests", prompt,
+        log_dir / "write_tests.log", config.default_model, config.max_turns,
+        post_check=cargo_check_tests,
+    )
+
+
+def _run_verify(config, story_id, spec_file, story_dir, log_dir, state):
+    output_file = story_dir / "results.md"
+    if _phase_done(state, story_id, "verify", output_file):
+        return True
+
+    template = (config.prompts_dir / "verify.md").read_text()
+    prompt = (
+        f"{template}\n\n"
+        f"## Your Task\n\n"
+        f"- Story ID: {story_id}\n"
+        f"- The project code is in: {config.project_dir}/\n"
+        f"- Write your results summary to: {output_file}\n"
+        f"- Maximum fix attempts: {config.max_retries}\n\n"
+        f"## Specification (for reference)\n\n{spec_file.read_text()}"
+    )
+
+    return _run_phase(
+        config, state, story_id, "verify", prompt,
+        log_dir / "verify.log", config.default_model, config.verify_turns,
+        output_file=output_file,
+    )
+
+
+# ── Commit ───────────────────────────────────────────────────────
+
+
+def _run_commit(config, story_id, spec_file, story_dir, log_dir, state):
+    if _phase_done(state, story_id, "commit"):
+        return True
+
+    project_dir = config.project_dir
+    log.info(f"[{story_id}] Commit: starting")
+
+    # Check for changes
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=project_dir, capture_output=True, text=True,
+    )
+    if not status.stdout.strip():
+        log.info(f"[{story_id}] Commit: no changes to commit")
+        state.set_phase_status(story_id, "commit", "done")
+        return True
+
+    # Stage all changes
+    subprocess.run(["git", "add", "-A"], cwd=project_dir, check=True)
+
+    # Get diff stat and full diff for commit message generation
+    diff_stat = subprocess.run(
+        ["git", "diff", "--cached", "--stat"],
+        cwd=project_dir, capture_output=True, text=True,
+    ).stdout.strip()
+
+    diff_text = subprocess.run(
+        ["git", "diff", "--cached"],
+        cwd=project_dir, capture_output=True, text=True,
+    ).stdout
+
+    # Truncate diff to avoid huge prompts
+    if len(diff_text) > 8000:
+        diff_text = diff_text[:8000] + "\n... (truncated)"
+
+    # Use Claude to generate a meaningful commit message
+    spec_text = spec_file.read_text()
+    results_text = ""
+    results_file = story_dir / "results.md"
+    if results_file.exists():
+        results_text = results_file.read_text()[:2000]
+
+    commit_msg_file = story_dir / "commit_msg.txt"
+    prompt = (
+        "Write a git commit message for the following changes.\n\n"
+        "Rules:\n"
+        "- First line: concise subject (max 72 chars) in imperative mood, no period\n"
+        "- Second line: blank\n"
+        "- Body: explain WHAT was implemented and WHY, not HOW\n"
+        f"- Last line of the body MUST be exactly: Story: {story_id}\n"
+        "- Do NOT reference the story anywhere else in the message\n"
+        "- Do NOT use prefixes like SPEC-xxx, feat:, or fix: in the subject\n"
+        "- Do NOT use generic messages like 'implement feature' — be specific\n"
+        "- Do NOT include the diff itself in the message\n"
+        "- Wrap body lines at 72 characters\n"
+        f"- Write the commit message to: {commit_msg_file}\n\n"
+        "Example format:\n"
+        "```\n"
+        "Add YAML serialization with bare state shorthand support\n"
+        "\n"
+        "Implement YAML deserialization supporting two formats: bare state\n"
+        "shorthand and explicit format with kind field. Add directory loading\n"
+        "that recursively parses .yaml/.yml files into a StateSet.\n"
+        "\n"
+        f"Story: {story_id}\n"
+        "```\n\n"
+        f"## Story ID: {story_id}\n\n"
+        f"## Specification\n\n{spec_text}\n\n"
+        f"## Diff stat\n\n```\n{diff_stat}\n```\n\n"
+        f"## Diff\n\n```diff\n{diff_text}\n```\n\n"
+    )
+    if results_text:
+        prompt += f"## Results\n\n{results_text}\n"
+
+    success, usage = run_claude(
+        prompt=prompt,
+        log_file=log_dir / "commit.log",
+        model=config.fast_model,
+        max_turns=config.max_turns,
+        workdir=config.workspace,
+        claude_cmd=config.claude_cmd,
+        skip_permissions=config.skip_permissions,
+        verbose=config.verbose,
+    )
+
+    if usage.input_tokens or usage.output_tokens:
+        state.add_cost(
+            story_id, "commit", usage.input_tokens, usage.output_tokens,
+            cache_creation_tokens=usage.cache_creation_tokens,
+            cache_read_tokens=usage.cache_read_tokens,
+            model=config.fast_model,
+        )
+
+    # Read generated commit message, or fall back to a basic one
+    if commit_msg_file.exists():
+        commit_msg = commit_msg_file.read_text().strip()
+    else:
+        spec_title = spec_text.split("\n")[0].lstrip("# ").strip()
+        commit_msg = f"feat({story_id}): {spec_title}\n\nStory: {story_id}"
+        log.warn(f"[{story_id}] Commit: Claude did not produce commit message, using fallback")
+
+    result = subprocess.run(
+        ["git", "commit", "-q", "-m", commit_msg],
+        cwd=project_dir, capture_output=True, text=True,
+    )
+
+    if result.returncode == 0:
+        sha = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=project_dir, capture_output=True, text=True,
+        ).stdout.strip()
+        state.set_phase_status(story_id, "commit", "done")
+        log.info(f"[{story_id}] Commit: {sha}")
+        return True
+    else:
+        log.warn(f"[{story_id}] Commit: failed — {result.stderr.strip()}")
+        return False
