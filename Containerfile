@@ -17,8 +17,10 @@ RUN apt-get update && apt-get install -y \
 # Install Rust tooling
 RUN rustup component add clippy rustfmt rust-analyzer
 
-# Install Claude Code CLI
-RUN npm install -g @anthropic-ai/claude-code
+# Install coding agent CLIs and clean up caches to reduce image file count
+RUN npm install -g @anthropic-ai/claude-code @qwen-code/qwen-code && \
+    npm cache clean --force && \
+    rm -rf /tmp/* /root/.npm /root/.cache
 
 # Copy factory into image
 COPY . /factory/
@@ -33,6 +35,7 @@ RUN useradd -m -s /bin/bash factory && \
 
 USER factory
 ENV PATH="/usr/local/cargo/bin:${PATH}"
+ENV NODE_COMPILE_CACHE=""
 
 WORKDIR /workspace
 

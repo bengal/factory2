@@ -27,24 +27,29 @@ Factory options:
   --strong-model MODEL     Model for plan + implement (default: claude-sonnet-4-6)
   --default-model MODEL    Model for understand, write-tests, verify (default: claude-sonnet-4-6)
   --fast-model MODEL       Model for dep analysis, summary, commit messages (default: claude-sonnet-4-6)
-  --max-turns N            Max turns per Claude run (default: 80)
+  --max-turns N            Max turns per agent run (default: 80)
   --verify-turns N         Max turns for verify phase (default: 120)
-  -v, --verbose            Stream Claude output to terminal in real time
+  -v, --verbose            Stream agent output to terminal in real time
 
 Authentication: set EITHER Anthropic API key OR Vertex AI env vars before running.
+For Qwen backend, run 'qwen auth' once locally; credentials in ~/.qwen/ are auto-copied.
 
-  # Anthropic API
+  # Anthropic API (claude backend)
   export ANTHROPIC_API_KEY="sk-ant-..."
 
-  # OR Vertex AI
+  # OR Vertex AI (claude backend)
   export CLAUDE_CODE_USE_VERTEX=1
   export CLOUD_ML_REGION=us-east5
   export ANTHROPIC_VERTEX_PROJECT_ID=my-project
+
+  # OR Qwen (qwen backend — uses ~/.qwen/oauth_creds.json)
+  export FACTORY_BACKEND=qwen
 
 Examples:
   ./run_container.sh ./my-specs
   ./run_container.sh ./my-specs -- -j 4 --strong-model claude-opus-4-6
   ./run_container.sh ./my-specs -o ./output -- -v --fast-model claude-haiku-4-5-20251001
+  FACTORY_BACKEND=qwen ./run_container.sh ./my-specs -- --model qwen3-coder-plus
 EOF
     exit 0
 }
@@ -57,6 +62,7 @@ FORCE_BUILD=false
 RUNTIME=""
 SPECS_DIR=""
 FACTORY_ARGS=()
+BACKEND="${FACTORY_BACKEND:-claude}"
 
 # ─── Parse Args ──────────────────────────────────────────────────────
 
@@ -116,7 +122,12 @@ fi
 
 # ─── Validate Environment ───────────────────────────────────────────
 
-if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${CLAUDE_CODE_USE_VERTEX:-}" ]; then
+if [ "$BACKEND" = "qwen" ]; then
+    if [ ! -f "${HOME}/.qwen/oauth_creds.json" ] && [ -z "${DASHSCOPE_API_KEY:-}" ]; then
+        echo "ERROR: Qwen backend requires either ~/.qwen/oauth_creds.json (run 'qwen auth') or DASHSCOPE_API_KEY" >&2
+        exit 1
+    fi
+elif [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${CLAUDE_CODE_USE_VERTEX:-}" ]; then
     echo "ERROR: Set ANTHROPIC_API_KEY or Vertex AI env vars (CLAUDE_CODE_USE_VERTEX, CLOUD_ML_REGION, ANTHROPIC_VERTEX_PROJECT_ID)" >&2
     exit 1
 fi
@@ -124,8 +135,13 @@ fi
 # ─── Build auth-related container args ──────────────────────────────
 
 AUTH_ARGS=()
+cred_src=""
 
-if [ -n "${CLAUDE_CODE_USE_VERTEX:-}" ]; then
+if [ "$BACKEND" = "qwen" ]; then
+    # Qwen credentials are copied into workspace below (after mkdir).
+    # Pass API key if set (alternative to OAuth).
+    [ -n "${DASHSCOPE_API_KEY:-}" ] && AUTH_ARGS+=(-e DASHSCOPE_API_KEY)
+elif [ -n "${CLAUDE_CODE_USE_VERTEX:-}" ]; then
     AUTH_ARGS+=(-e CLAUDE_CODE_USE_VERTEX)
     AUTH_ARGS+=(-e CLOUD_ML_REGION)
     AUTH_ARGS+=(-e ANTHROPIC_VERTEX_PROJECT_ID)
@@ -134,7 +150,6 @@ if [ -n "${CLAUDE_CODE_USE_VERTEX:-}" ]; then
     [ -n "${ANTHROPIC_VERTEX_REGION:-}" ]    && AUTH_ARGS+=(-e ANTHROPIC_VERTEX_REGION)
 
     # Credentials are copied into the workspace after it's created (see below).
-    cred_src=""
     if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ] && [ -f "${GOOGLE_APPLICATION_CREDENTIALS}" ]; then
         cred_src="${GOOGLE_APPLICATION_CREDENTIALS}"
     elif [ -f "${HOME}/.config/gcloud/application_default_credentials.json" ]; then
@@ -166,11 +181,17 @@ cp "$SPECS_DIR"/*.md "$WORKSPACE/specs/" || {
     exit 1
 }
 
-# Copy GCP credentials into workspace so entrypoint.sh's chown makes them readable
+# Copy credentials into workspace so entrypoint.sh's chown makes them readable
 # (podman UID remapping makes direct bind-mounts unreadable by non-root).
 if [ -n "${cred_src:-}" ]; then
     cp "$cred_src" "$WORKSPACE/.gcp-credentials.json"
     AUTH_ARGS+=(-e GOOGLE_APPLICATION_CREDENTIALS=/workspace/.gcp-credentials.json)
+fi
+
+# Copy Qwen OAuth credentials into workspace
+if [ "$BACKEND" = "qwen" ] && [ -f "${HOME}/.qwen/oauth_creds.json" ]; then
+    cp "${HOME}/.qwen/oauth_creds.json" "$WORKSPACE/.qwen-oauth-creds.json"
+    [ -f "${HOME}/.qwen/settings.json" ] && cp "${HOME}/.qwen/settings.json" "$WORKSPACE/.qwen-settings.json"
 fi
 
 # ─── Run ─────────────────────────────────────────────────────────────
@@ -179,29 +200,32 @@ echo ""
 echo "Starting factory..."
 echo "  Specs:       $SPECS_DIR"
 echo "  Workspace:   $WORKSPACE"
+echo "  Backend:     $BACKEND"
 echo "  Runtime:     $RUNTIME"
 echo "  Image:       $IMAGE_NAME"
 echo ""
 
+# Inject --backend into factory args
+FACTORY_ARGS=("--backend" "$BACKEND" "${FACTORY_ARGS[@]+"${FACTORY_ARGS[@]}"}")
+
 # Remove stale container with this name (from a previous interrupted run)
 $RUNTIME rm -f factory2-run 2>/dev/null || true
-
-USERNS_ARGS=()
-if [ "$RUNTIME" = "podman" ]; then
-    USERNS_ARGS+=(--userns=keep-id)
-fi
 
 $RUNTIME run --rm \
     --name factory2-run \
     --cap-add=NET_ADMIN \
     --cap-add=SYS_ADMIN \
-    "${USERNS_ARGS[@]}" \
     -v "$WORKSPACE:/workspace" \
     "${AUTH_ARGS[@]}" \
     -e SKIP_PERMISSIONS="${SKIP_PERMISSIONS:-1}" \
     -e PYTHONPATH=/factory \
     "$IMAGE_NAME" \
     /workspace "${FACTORY_ARGS[@]+"${FACTORY_ARGS[@]}"}"
+
+# Reclaim file ownership after container run (podman rootless uses subuids)
+if [ "$RUNTIME" = "podman" ]; then
+    $RUNTIME unshare chown -R 0:0 "$WORKSPACE" 2>/dev/null || true
+fi
 
 echo ""
 echo "Factory complete."
