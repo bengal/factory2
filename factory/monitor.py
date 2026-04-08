@@ -43,6 +43,12 @@ def colored_status(s: str) -> str:
     return f"{color}{s}{NC}"
 
 
+def _ansi_overhead(s: str) -> int:
+    """Return the number of non-visible ANSI bytes added by colored_status()."""
+    color = STATUS_COLORS.get(s, "")
+    return len(color) + len(NC) if color else 0
+
+
 def format_tokens(n: int) -> str:
     if n >= 1_000_000:
         return f"{n / 1_000_000:.1f}M"
@@ -135,12 +141,11 @@ def show_status(workspace: Path):
         s = stories[sid]
         status = s.get("status", "pending")
 
-        # ANSI codes add 11 chars to colored_status output, so pad accordingly
-        line = f"  {sid:<{name_width}}{colored_status(status):<{15 + 11}}"
+        line = f"  {sid:<{name_width}}{colored_status(status):<{15 + _ansi_overhead(status)}}"
 
         for p in phases:
             ps = s.get("phases", {}).get(p, {}).get("status", "-")
-            line += f"{colored_status(ps):<{13 + 11}}"
+            line += f"{colored_status(ps):<{13 + _ansi_overhead(ps)}}"
 
         # Tokens (input = uncached + cache_write + cache_read)
         costs = s.get("costs", {})
