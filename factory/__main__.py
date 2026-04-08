@@ -37,8 +37,8 @@ def main():
         help="Model for dep analysis + summary (default: auto per backend)",
     )
     parser.add_argument(
-        "--max-turns", type=int, default=80,
-        help="Max turns per agent run (default: 80)",
+        "--max-turns", type=int, default=100,
+        help="Max turns per agent run (default: 100)",
     )
     parser.add_argument(
         "--verify-turns", type=int, default=120,

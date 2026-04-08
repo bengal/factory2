@@ -11,7 +11,7 @@ class Config:
     strong_model: str = "claude-sonnet-4-6"   # plan, implement
     default_model: str = "claude-sonnet-4-6"  # understand, write-tests, verify
     fast_model: str = "claude-sonnet-4-6"     # analyze-deps, summarize
-    max_turns: int = 80
+    max_turns: int = 100
     verify_turns: int = 120
     verbose: bool = False
     backend: str = "claude"    # "claude" or "qwen"

@@ -27,7 +27,7 @@ Factory options:
   --strong-model MODEL     Model for plan + implement (default: claude-sonnet-4-6)
   --default-model MODEL    Model for understand, write-tests, verify (default: claude-sonnet-4-6)
   --fast-model MODEL       Model for dep analysis, summary, commit messages (default: claude-sonnet-4-6)
-  --max-turns N            Max turns per agent run (default: 80)
+  --max-turns N            Max turns per agent run (default: 100)
   --verify-turns N         Max turns for verify phase (default: 120)
   -v, --verbose            Stream agent output to terminal in real time
 
