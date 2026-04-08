@@ -11,7 +11,7 @@ from .deps import (
     topo_sort,
 )
 from .pipeline import run_story_pipeline
-from .runner import run_claude
+from .runner import run_agent
 from .state import State, spec_hash, specs_combined_hash
 
 
@@ -28,6 +28,7 @@ def run_factory(config: Config):
     log.info(f"  Workspace:  {config.workspace}")
     log.info(f"  Stories:    {len(story_ids)}")
     log.info(f"  Parallel:   {config.max_parallel}")
+    log.info(f"  Backend:    {config.backend}")
     log.info(f"  Models:     {config.strong_model} (strong), {config.default_model} (default), {config.fast_model} (fast)")
     print("", flush=True)
 
@@ -103,7 +104,7 @@ def _discover_stories(config: Config) -> list[str]:
 
 def _check_prerequisites(config: Config):
     import shutil
-    for cmd in [config.claude_cmd, "jq", "cargo"]:
+    for cmd in [config.cmd, "jq", "cargo"]:
         if not shutil.which(cmd):
             raise SystemExit(f"Required command not found: {cmd}")
 
@@ -290,13 +291,14 @@ def _generate_summary(config: Config, story_ids: list[str], state: State):
     )
 
     log_file = config.output_dir / "summary.log"
-    success, usage = run_claude(
+    success, usage = run_agent(
         prompt=prompt,
         log_file=log_file,
         model=config.fast_model,
         max_turns=config.max_turns,
         workdir=config.workspace,
-        claude_cmd=config.claude_cmd,
+        backend=config.backend,
+        cmd=config.cmd,
         skip_permissions=config.skip_permissions,
         verbose=config.verbose,
     )

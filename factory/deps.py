@@ -4,7 +4,7 @@ from pathlib import Path
 
 from . import log
 from .config import Config
-from .runner import run_claude
+from .runner import run_agent
 from .state import State, specs_combined_hash
 
 
@@ -41,19 +41,20 @@ def run_dependency_analysis(config: Config, story_ids: list[str], state: State):
     config.output_dir.mkdir(parents=True, exist_ok=True)
     log_file = config.output_dir / "deps_analysis.log"
 
-    success, usage = run_claude(
+    success, usage = run_agent(
         prompt=prompt,
         log_file=log_file,
         model=config.fast_model,
         max_turns=config.max_turns,
         workdir=config.workspace,
-        claude_cmd=config.claude_cmd,
+        backend=config.backend,
+        cmd=config.cmd,
         skip_permissions=config.skip_permissions,
         verbose=config.verbose,
     )
 
     if not success:
-        log.warn("Dependency analysis Claude run failed")
+        log.warn("Dependency analysis failed")
 
     if not deps_file.exists():
         log.warn("deps.json not produced, creating fallback with no dependencies")

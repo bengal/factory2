@@ -14,7 +14,8 @@ class Config:
     max_turns: int = 80
     verify_turns: int = 120
     verbose: bool = False
-    claude_cmd: str = "claude"
+    backend: str = "claude"    # "claude" or "qwen"
+    cmd: str = "claude"        # CLI binary name/path
     skip_permissions: bool = True
 
     @property

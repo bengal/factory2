@@ -4,7 +4,7 @@ from pathlib import Path
 from . import cargo, log
 from .config import Config
 from .context import generate_context
-from .runner import run_claude
+from .runner import run_agent
 from .state import State
 
 
@@ -66,13 +66,14 @@ def _run_phase(
     state.set_phase_status(story_id, phase, "running")
     log.info(f"[{story_id}] {phase}: starting")
 
-    success, usage = run_claude(
+    success, usage = run_agent(
         prompt=prompt,
         log_file=log_file,
         model=model,
         max_turns=max_turns,
         workdir=config.workspace,
-        claude_cmd=config.claude_cmd,
+        backend=config.backend,
+        cmd=config.cmd,
         skip_permissions=config.skip_permissions,
         verbose=config.verbose,
     )
@@ -92,7 +93,7 @@ def _run_phase(
 
     # Check output file was created
     if output_file and not output_file.exists():
-        log.error(f"[{story_id}] {phase}: Claude ran but did not produce {output_file}")
+        log.error(f"[{story_id}] {phase}: agent ran but did not produce {output_file}")
         state.set_phase_status(story_id, phase, "failed")
         return False
 
@@ -293,13 +294,14 @@ def _run_commit(config, story_id, spec_file, story_dir, log_dir, state):
         f"Write to: {commit_msg_file}\n"
     )
 
-    success, usage = run_claude(
+    success, usage = run_agent(
         prompt=prompt,
         log_file=log_dir / "commit.log",
         model=config.fast_model,
         max_turns=5,
         workdir=config.workspace,
-        claude_cmd=config.claude_cmd,
+        backend=config.backend,
+        cmd=config.cmd,
         skip_permissions=config.skip_permissions,
         verbose=config.verbose,
     )

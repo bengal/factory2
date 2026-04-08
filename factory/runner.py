@@ -15,35 +15,25 @@ class Usage:
     cache_read_tokens: int = 0
 
 
-def run_claude(
+def run_agent(
     prompt: str,
     log_file: Path,
     model: str,
     max_turns: int,
     workdir: Path,
-    claude_cmd: str = "claude",
+    backend: str = "claude",
+    cmd: str = "claude",
     skip_permissions: bool = True,
     verbose: bool = False,
 ) -> tuple[bool, Usage]:
-    """Run Claude Code in print mode. Returns (success, usage)."""
+    """Run a coding agent CLI in print mode. Returns (success, usage)."""
 
-    cmd = [
-        claude_cmd,
-        "-p",
-        "--output-format", "stream-json",
-        "--verbose",
-        "--model", model,
-        "--max-turns", str(max_turns),
-        "--allowedTools", "Read,Write,Edit,Glob,Grep,Bash",
-    ]
+    if backend == "qwen":
+        cmd_list = _build_qwen_cmd(cmd, model, max_turns, skip_permissions)
+    else:
+        cmd_list = _build_claude_cmd(cmd, model, max_turns, skip_permissions)
 
-    if skip_permissions:
-        cmd.append("--dangerously-skip-permissions")
-
-    # Pass prompt via stdin to avoid "Argument list too long" with large prompts
-    cmd.append("-")
-
-    log.info(f"  Claude: model={model} max_turns={max_turns}")
+    log.info(f"  Agent ({backend}): model={model} max_turns={max_turns}")
     log.info(f"  Log:    {log_file}")
 
     log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -52,7 +42,7 @@ def run_claude(
 
     with open(log_file, "w") as lf:
         proc = subprocess.Popen(
-            cmd,
+            cmd_list,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -77,9 +67,41 @@ def run_claude(
         proc.wait()
 
     if proc.returncode != 0:
-        log.error(f"  Claude exited with code {proc.returncode}")
+        log.error(f"  Agent exited with code {proc.returncode}")
 
     return proc.returncode == 0, usage
+
+
+def _build_claude_cmd(cmd, model, max_turns, skip_permissions):
+    args = [
+        cmd,
+        "-p",
+        "--output-format", "stream-json",
+        "--verbose",
+        "--model", model,
+        "--max-turns", str(max_turns),
+        "--allowedTools", "Read,Write,Edit,Glob,Grep,Bash",
+    ]
+    if skip_permissions:
+        args.append("--dangerously-skip-permissions")
+    args.append("-")  # read prompt from stdin
+    return args
+
+
+def _build_qwen_cmd(cmd, model, max_turns, skip_permissions):
+    args = [
+        cmd,
+        "-p", "-",  # read prompt from stdin
+        "--output-format", "stream-json",
+        "--model", model,
+        "--max-session-turns", str(max_turns),
+        "--allowed-tools",
+        "read_file", "write_file", "edit", "glob",
+        "grep_search", "run_shell_command",
+    ]
+    if skip_permissions:
+        args.append("--yolo")
+    return args
 
 
 def _accumulate_usage(line: str, usage: Usage):
