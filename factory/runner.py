@@ -13,6 +13,7 @@ class Usage:
     output_tokens: int = 0
     cache_creation_tokens: int = 0
     cache_read_tokens: int = 0
+    num_turns: int = 0
 
 
 def run_agent(
@@ -59,10 +60,11 @@ def run_agent(
             if verbose:
                 sys.stderr.write(line)
 
-            # Parse stream-json for usage stats
+            # Parse stream-json for usage stats and turn count
             stripped = line.strip()
             if stripped:
                 _accumulate_usage(stripped, usage)
+                _accumulate_turns(stripped, usage)
 
         proc.wait()
 
@@ -102,6 +104,16 @@ def _build_qwen_cmd(cmd, model, max_turns, skip_permissions):
     if skip_permissions:
         args.append("--yolo")
     return args
+
+
+def _accumulate_turns(line: str, usage: Usage):
+    """Extract num_turns from a stream-json result line."""
+    try:
+        obj = json.loads(line)
+    except json.JSONDecodeError:
+        return
+    if isinstance(obj, dict) and obj.get("type") == "result":
+        usage.num_turns = max(usage.num_turns, obj.get("num_turns", 0))
 
 
 def _accumulate_usage(line: str, usage: Usage):

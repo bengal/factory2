@@ -84,6 +84,7 @@ def _run_phase(
             story_id, phase, usage.input_tokens, usage.output_tokens,
             cache_creation_tokens=usage.cache_creation_tokens,
             cache_read_tokens=usage.cache_read_tokens,
+            num_turns=usage.num_turns,
             model=model,
         )
 
@@ -311,6 +312,7 @@ def _run_commit(config, story_id, spec_file, story_dir, log_dir, state):
             story_id, "commit", usage.input_tokens, usage.output_tokens,
             cache_creation_tokens=usage.cache_creation_tokens,
             cache_read_tokens=usage.cache_read_tokens,
+            num_turns=usage.num_turns,
             model=config.fast_model,
         )
 
