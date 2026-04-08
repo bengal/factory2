@@ -66,6 +66,7 @@ def _run_phase(
     state.set_phase_status(story_id, phase, "running")
     log.info(f"[{story_id}] {phase}: starting")
 
+    activity_file = config.stories_dir / story_id / "activity"
     success, usage = run_agent(
         prompt=prompt,
         log_file=log_file,
@@ -76,6 +77,7 @@ def _run_phase(
         cmd=config.cmd,
         skip_permissions=config.skip_permissions,
         verbose=config.verbose,
+        activity_file=activity_file,
     )
 
     # Track costs

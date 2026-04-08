@@ -26,6 +26,7 @@ def run_agent(
     cmd: str = "claude",
     skip_permissions: bool = True,
     verbose: bool = False,
+    activity_file: Path | None = None,
 ) -> tuple[bool, Usage]:
     """Run a coding agent CLI in print mode. Returns (success, usage)."""
 
@@ -65,8 +66,13 @@ def run_agent(
             if stripped:
                 _accumulate_usage(stripped, usage)
                 _accumulate_turns(stripped, usage)
+                if activity_file:
+                    _update_activity(stripped, activity_file)
 
         proc.wait()
+
+    if activity_file:
+        activity_file.unlink(missing_ok=True)
 
     if proc.returncode != 0:
         log.error(f"  Agent exited with code {proc.returncode}")
@@ -104,6 +110,104 @@ def _build_qwen_cmd(cmd, model, max_turns, skip_permissions):
     if skip_permissions:
         args.append("--yolo")
     return args
+
+
+def _update_activity(line: str, activity_file: Path):
+    """Parse a stream-json line and write current activity to file."""
+    try:
+        obj = json.loads(line)
+    except json.JSONDecodeError:
+        return
+
+    activity = _extract_activity(obj)
+    if activity:
+        tmp = activity_file.with_suffix(".tmp")
+        tmp.write_text(activity)
+        tmp.rename(activity_file)
+
+
+def _extract_activity(obj) -> str | None:
+    """Extract a human-readable activity string from a stream-json object."""
+    if not isinstance(obj, dict):
+        return None
+
+    # Tool results
+    if obj.get("type") == "tool_result":
+        return None
+
+    # Final result
+    if obj.get("type") == "result":
+        return "Done" if obj.get("subtype") == "success" else "Failed"
+
+    # Assistant messages with content
+    msg = obj.get("message") if obj.get("type") == "assistant" else None
+    if not msg:
+        return None
+
+    content = msg.get("content", [])
+    if not isinstance(content, list):
+        return None
+
+    for block in reversed(content):
+        if not isinstance(block, dict):
+            continue
+        btype = block.get("type")
+
+        if btype == "tool_use":
+            name = block.get("name", "")
+            inp = block.get("input", {})
+            return _format_tool_activity(name, inp)
+
+        if btype == "thinking":
+            return "Thinking..."
+
+        if btype == "text":
+            text = block.get("text", "").strip()
+            if text:
+                # First line, truncated
+                first_line = text.split("\n")[0]
+                if len(first_line) > 80:
+                    return first_line[:77] + "..."
+                return first_line
+
+    return None
+
+
+def _format_tool_activity(name: str, inp: dict) -> str:
+    """Format a tool use into a short activity string."""
+    # Normalize qwen tool names
+    display = {
+        "read_file": "Read", "write_file": "Write", "edit": "Edit",
+        "glob": "Glob", "grep_search": "Grep",
+        "run_shell_command": "Bash",
+    }.get(name, name)
+
+    if display in ("Read", "Write", "Edit"):
+        path = inp.get("file_path", inp.get("path", ""))
+        if path:
+            # Show just the filename or last 2 path components
+            parts = path.rsplit("/", 2)
+            short = "/".join(parts[-2:]) if len(parts) > 1 else path
+            return f"{display} {short}"
+        return display
+
+    if display == "Bash":
+        cmd = inp.get("command", "")
+        if cmd:
+            if len(cmd) > 60:
+                cmd = cmd[:57] + "..."
+            return f"$ {cmd}"
+        return "Bash"
+
+    if display == "Grep":
+        pattern = inp.get("pattern", "")
+        return f"Grep {pattern[:40]}" if pattern else "Grep"
+
+    if display == "Glob":
+        pattern = inp.get("pattern", "")
+        return f"Glob {pattern[:40]}" if pattern else "Glob"
+
+    return display
 
 
 def _accumulate_turns(line: str, usage: Usage):

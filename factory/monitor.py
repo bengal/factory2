@@ -114,6 +114,7 @@ def show_status(workspace: Path):
     print()
 
     # Per-story table
+    stories_dir = workspace / "stories"
     phases = ["understand", "plan", "implement", "write_tests", "verify"]
 
     # Dynamic column width based on longest story ID, capped at 40
@@ -150,7 +151,7 @@ def show_status(workspace: Path):
 
         print(line)
 
-        # Show reason if quarantined/skipped
+        # Show reason if quarantined/skipped, or activity if in progress
         if status == "quarantined":
             reason = s.get("quarantine_reason", "")
             if reason:
@@ -159,6 +160,25 @@ def show_status(workspace: Path):
             reason = s.get("skip_reason", "")
             if reason:
                 print(f"  {DIM}  └─ {reason}{NC}")
+        elif status == "in_progress":
+            activity_file = stories_dir / sid / "activity"
+            if activity_file.exists():
+                try:
+                    activity = activity_file.read_text().strip()
+                    if activity:
+                        # Find current phase
+                        cur_phase = ""
+                        for p in phases:
+                            ps = s.get("phases", {}).get(p, {}).get("status", "")
+                            if ps == "running":
+                                cur_phase = p
+                                break
+                        prefix = f"{cur_phase}: " if cur_phase else ""
+                        if len(prefix + activity) > 80:
+                            activity = activity[:80 - len(prefix)] + "..."
+                        print(f"  {DIM}  └─ {prefix}{activity}{NC}")
+                except OSError:
+                    pass
 
     # Total costs
     print()
@@ -183,7 +203,6 @@ def show_status(workspace: Path):
         )
 
     # Active log files
-    stories_dir = workspace / "stories"
     if stories_dir.exists():
         active = []
         for logf in sorted(stories_dir.rglob("*.log")):
