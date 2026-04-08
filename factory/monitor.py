@@ -56,12 +56,15 @@ _MODEL_RATES = {
     "opus": (15, 18.75, 1.50, 75),
     "sonnet": (3, 3.75, 0.30, 15),
     "haiku": (0.80, 1.00, 0.08, 4),
+    "qwen": (0, 0, 0, 0),  # free tier (oauth) or negligible cost
 }
 
 
 def _model_tier(model: str) -> str:
-    """Map a model ID like 'claude-opus-4-6' to a tier name."""
+    """Map a model ID like 'claude-opus-4-6' or 'qwen3-coder-plus' to a tier name."""
     m = model.lower()
+    if "qwen" in m or m == "coder-model":
+        return "qwen"
     for tier in ("opus", "sonnet", "haiku"):
         if tier in m:
             return tier
@@ -124,9 +127,9 @@ def show_status(workspace: Path):
     header = f"  {BOLD}{'STORY':<{name_width}}{'STATUS':<15}"
     for p in phases:
         header += f"{p:<13}"
-    header += f"{'TOKENS':>12}{NC}"
+    header += f"{'TOKENS':>12}  {'REQS':>5}{NC}"
     print(header)
-    print(f"  {DIM}{'─' * (name_width + 15 + 13 * len(phases) + 12)}{NC}")
+    print(f"  {DIM}{'─' * (name_width + 15 + 13 * len(phases) + 12 + 7)}{NC}")
 
     for sid in sorted(stories.keys()):
         s = stories[sid]
@@ -146,8 +149,13 @@ def show_status(workspace: Path):
             for c in costs.values()
         )
         total_out = sum(c.get("output_tokens", 0) for c in costs.values())
+        story_turns = sum(c.get("num_turns", 0) for c in costs.values())
         if total_in or total_out:
             line += f"{format_tokens(total_in)}/{format_tokens(total_out):>6}"
+        else:
+            line += f"{'':>12}"
+        if story_turns:
+            line += f"  {story_turns:>5}"
 
         print(line)
 
@@ -184,6 +192,7 @@ def show_status(workspace: Path):
     print()
     all_costs = data.get("stories", {})
     grand_in = grand_cache_w = grand_cache_r = grand_out = 0
+    grand_turns = 0
     total_est = 0.0
     for s in all_costs.values():
         for c in s.get("costs", {}).values():
@@ -191,15 +200,19 @@ def show_status(workspace: Path):
             grand_cache_w += c.get("cache_creation_tokens", 0)
             grand_cache_r += c.get("cache_read_tokens", 0)
             grand_out += c.get("output_tokens", 0)
+            grand_turns += c.get("num_turns", 0)
             total_est += _estimate_cost(c)
 
     grand_all_in = grand_in + grand_cache_w + grand_cache_r
     if grand_all_in or grand_out:
+        cost_or_turns = f"{DIM}(~${total_est:.2f}){NC}" if total_est else ""
+        if grand_turns:
+            cost_or_turns = f"{BOLD}{grand_turns}{NC} requests  " + cost_or_turns
         print(
             f"  {BOLD}Total:{NC} {format_tokens(grand_all_in)} input "
             f"{DIM}({format_tokens(grand_cache_w)} write, {format_tokens(grand_cache_r)} read){NC}, "
             f"{format_tokens(grand_out)} output  "
-            f"{DIM}(~${total_est:.2f}){NC}"
+            + cost_or_turns
         )
 
     # Active log files
