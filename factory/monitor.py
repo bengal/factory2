@@ -49,6 +49,14 @@ def _ansi_overhead(s: str) -> int:
     return len(color) + len(NC) if color else 0
 
 
+def _read_live_usage(path) -> dict | None:
+    """Read live usage stats written by the runner, or None if unavailable."""
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def format_tokens(n: int) -> str:
     if n >= 1_000_000:
         return f"{n / 1_000_000:.1f}M"
@@ -155,6 +163,13 @@ def show_status(workspace: Path):
         )
         total_out = sum(c.get("output_tokens", 0) for c in costs.values())
         story_turns = sum(c.get("num_turns", 0) for c in costs.values())
+
+        # Add live usage from currently running phase
+        live = _read_live_usage(stories_dir / sid / "live_usage")
+        if live:
+            total_in += live.get("input_tokens", 0) + live.get("cache_creation_tokens", 0) + live.get("cache_read_tokens", 0)
+            total_out += live.get("output_tokens", 0)
+            story_turns += live.get("num_turns", 0)
         if total_in or total_out:
             line += f"{format_tokens(total_in)}/{format_tokens(total_out):>6}"
         else:
@@ -199,7 +214,7 @@ def show_status(workspace: Path):
     grand_in = grand_cache_w = grand_cache_r = grand_out = 0
     grand_turns = 0
     total_est = 0.0
-    for s in all_costs.values():
+    for sid, s in all_costs.items():
         for c in s.get("costs", {}).values():
             grand_in += c.get("input_tokens", 0)
             grand_cache_w += c.get("cache_creation_tokens", 0)
@@ -207,6 +222,14 @@ def show_status(workspace: Path):
             grand_out += c.get("output_tokens", 0)
             grand_turns += c.get("num_turns", 0)
             total_est += _estimate_cost(c)
+        # Add live usage from currently running phase
+        live = _read_live_usage(stories_dir / sid / "live_usage")
+        if live:
+            grand_in += live.get("input_tokens", 0)
+            grand_cache_w += live.get("cache_creation_tokens", 0)
+            grand_cache_r += live.get("cache_read_tokens", 0)
+            grand_out += live.get("output_tokens", 0)
+            grand_turns += live.get("num_turns", 0)
 
     grand_all_in = grand_in + grand_cache_w + grand_cache_r
     if grand_all_in or grand_out:

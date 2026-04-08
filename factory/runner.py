@@ -64,15 +64,19 @@ def run_agent(
             # Parse stream-json for usage stats and turn count
             stripped = line.strip()
             if stripped:
+                old_in, old_out = usage.input_tokens, usage.output_tokens
                 _accumulate_usage(stripped, usage)
                 _accumulate_turns(stripped, usage)
                 if activity_file:
                     _update_activity(stripped, activity_file)
+                    if usage.input_tokens != old_in or usage.output_tokens != old_out:
+                        _write_live_usage(activity_file.parent / "live_usage", usage)
 
         proc.wait()
 
     if activity_file:
         activity_file.unlink(missing_ok=True)
+        (activity_file.parent / "live_usage").unlink(missing_ok=True)
 
     if proc.returncode != 0:
         log.error(f"  Agent exited with code {proc.returncode}")
@@ -159,6 +163,12 @@ def _extract_activity(obj) -> str | None:
             return _format_tool_activity(name, inp)
 
         if btype == "thinking":
+            thought = block.get("thinking", "").strip()
+            if thought:
+                first_line = thought.split("\n")[0]
+                if len(first_line) > 76:
+                    return first_line[:73] + "..."
+                return first_line
             return "Thinking..."
 
         if btype == "text":
@@ -208,6 +218,20 @@ def _format_tool_activity(name: str, inp: dict) -> str:
         return f"Glob {pattern[:40]}" if pattern else "Glob"
 
     return display
+
+
+def _write_live_usage(path: Path, usage: Usage):
+    """Write current usage stats to a file for the monitor to read."""
+    data = json.dumps({
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "cache_creation_tokens": usage.cache_creation_tokens,
+        "cache_read_tokens": usage.cache_read_tokens,
+        "num_turns": usage.num_turns,
+    })
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(data)
+    tmp.rename(path)
 
 
 def _accumulate_turns(line: str, usage: Usage):
