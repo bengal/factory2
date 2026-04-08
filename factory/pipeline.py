@@ -266,6 +266,9 @@ def _run_commit(config, story_id, spec_file, story_dir, log_dir, state):
         ["git", "status", "--porcelain"],
         cwd=project_dir, capture_output=True, text=True,
     )
+    if status.returncode != 0:
+        log.error(f"[{story_id}] Commit: git status failed: {status.stderr.strip()}")
+        return False
     if not status.stdout.strip():
         log.info(f"[{story_id}] Commit: no changes to commit")
         state.set_phase_status(story_id, "commit", "done")

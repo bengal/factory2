@@ -3,9 +3,10 @@
 # then exec the factory as the current user.
 sudo chown -R "$(id -u):$(id -g)" /workspace 2>/dev/null || true
 
-# Set git identity if not configured
+# Set git identity and trust workspace directories
 git config --global user.name "${GIT_AUTHOR_NAME:-Factory}" 2>/dev/null || true
 git config --global user.email "${GIT_AUTHOR_EMAIL:-factory@localhost}" 2>/dev/null || true
+git config --global --add safe.directory /workspace/project 2>/dev/null || true
 
 # Set up Qwen Code credentials if provided in workspace
 if [ -f /workspace/.qwen-oauth-creds.json ]; then
