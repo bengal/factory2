@@ -166,13 +166,10 @@ fi
 WORKSPACE="$OUTPUT_DIR/workspace"
 mkdir -p "$WORKSPACE/specs"
 
-# Reclaim ownership from previous container runs.
-# Podman rootless remaps UIDs, so the workspace ends up owned by a high UID on the host.
-# "podman unshare" maps it back so chown 0:0 = the host user.
+# Reclaim ownership from previous container runs that used subuid remapping.
+# With --userns=keep-id this is only needed once to migrate old workspaces.
 if [ "$RUNTIME" = "podman" ]; then
     $RUNTIME unshare chown -R 0:0 "$WORKSPACE" 2>/dev/null || true
-else
-    chown -R "$(id -u):$(id -g)" "$WORKSPACE" 2>/dev/null || true
 fi
 
 # Sync specs into workspace (preserves existing workspace state for incremental runs)
@@ -181,8 +178,7 @@ cp "$SPECS_DIR"/*.md "$WORKSPACE/specs/" || {
     exit 1
 }
 
-# Copy credentials into workspace so entrypoint.sh's chown makes them readable
-# (podman UID remapping makes direct bind-mounts unreadable by non-root).
+# Copy credentials into workspace (with --userns=keep-id, ownership is preserved).
 if [ -n "${cred_src:-}" ]; then
     cp "$cred_src" "$WORKSPACE/.gcp-credentials.json"
     AUTH_ARGS+=(-e GOOGLE_APPLICATION_CREDENTIALS=/workspace/.gcp-credentials.json)
@@ -211,21 +207,24 @@ FACTORY_ARGS=("--backend" "$BACKEND" "${FACTORY_ARGS[@]+"${FACTORY_ARGS[@]}"}")
 # Remove stale container with this name (from a previous interrupted run)
 $RUNTIME rm -f factory2-run 2>/dev/null || true
 
+USERNS_ARGS=()
+if [ "$RUNTIME" = "podman" ]; then
+    # Map host UID into container so files have correct ownership on both sides.
+    # No more subuid remapping, no post-run chown needed.
+    USERNS_ARGS=(--userns=keep-id)
+fi
+
 $RUNTIME run --rm \
     --name factory2-run \
     --cap-add=NET_ADMIN \
     --cap-add=SYS_ADMIN \
+    "${USERNS_ARGS[@]+"${USERNS_ARGS[@]}"}" \
     -v "$WORKSPACE:/workspace" \
     "${AUTH_ARGS[@]}" \
     -e SKIP_PERMISSIONS="${SKIP_PERMISSIONS:-1}" \
     -e PYTHONPATH=/factory \
     "$IMAGE_NAME" \
     /workspace "${FACTORY_ARGS[@]+"${FACTORY_ARGS[@]}"}"
-
-# Reclaim file ownership after container run (podman rootless uses subuids)
-if [ "$RUNTIME" = "podman" ]; then
-    $RUNTIME unshare chown -R 0:0 "$WORKSPACE" 2>/dev/null || true
-fi
 
 echo ""
 echo "Factory complete."

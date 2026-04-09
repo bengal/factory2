@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Fix workspace ownership (may be root-owned from a previous run or host mount)
-# then exec the factory as the current user.
-sudo chown -R "$(id -u):$(id -g)" /workspace 2>/dev/null || true
+# With --userns=keep-id, the host UID maps directly to the container user,
+# so workspace files have correct ownership. No chown needed.
 
 # Set git identity and trust workspace directories
 git config --global user.name "${GIT_AUTHOR_NAME:-Factory}" 2>/dev/null || true
