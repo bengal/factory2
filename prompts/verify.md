@@ -9,9 +9,12 @@ Process:
    c. Fix the code — prefer fixing the implementation over tests, unless the test is clearly wrong
    d. Run `cargo test` again
    e. Repeat up to the maximum number of fix attempts specified below
+   f. If a test failure is caused by an environment limitation (e.g., user namespaces unavailable, missing system tool) that you cannot fix, skip the test with `#[ignore]` and note the reason — do NOT keep retrying
 4. Run `cargo clippy` and fix any warnings
 5. Do NOT run `git commit` — the factory handles commits automatically
-6. Write a results summary to the output file specified below
+6. Do NOT create or modify `.cargo/config.toml`. Never change the linker, rustflags, or other global cargo settings.
+7. Do NOT run `apt-get install` or modify the system environment.
+8. Write a results summary to the output file specified below
 
 Structure the results file as:
 

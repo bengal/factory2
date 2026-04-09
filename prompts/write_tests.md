@@ -11,5 +11,6 @@ Rules:
 6. Test both happy paths and error/edge cases.
 7. Do NOT modify the implementation code. If you find a bug, note it in a comment — the verify phase will handle it.
 8. Do NOT run `git commit` — the factory handles commits automatically.
+9. Do NOT create or modify `.cargo/config.toml`. Never change the linker, rustflags, or other global cargo settings.
 
 Focus on testing BEHAVIOR described in the acceptance criteria, not implementation details.

@@ -10,6 +10,7 @@ Rules:
 7. Update Cargo.toml only for justified dependencies.
 8. After the code compiles, run `cargo clippy` and fix any warnings.
 9. Do NOT run `git commit` — the factory handles commits automatically.
+10. Do NOT create or modify `.cargo/config.toml`. Never change the linker, rustflags, or other global cargo settings.
 
 If the plan has a clear mistake (e.g., references a nonexistent trait), use your judgment to correct it while preserving the intent.
 
