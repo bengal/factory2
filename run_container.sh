@@ -172,11 +172,19 @@ if [ "$RUNTIME" = "podman" ]; then
     $RUNTIME unshare chown -R 0:0 "$WORKSPACE" 2>/dev/null || true
 fi
 
-# Sync specs into workspace (preserves existing workspace state for incremental runs)
+# Sync specs into workspace: copy new/updated specs, remove deleted ones.
 cp "$SPECS_DIR"/*.md "$WORKSPACE/specs/" || {
     echo "ERROR: No .md files found in $SPECS_DIR" >&2
     exit 1
 }
+# Remove workspace specs that no longer exist in the source directory
+for f in "$WORKSPACE/specs/"*.md; do
+    [ -f "$f" ] || continue
+    if [ ! -f "$SPECS_DIR/$(basename "$f")" ]; then
+        echo "Removing deleted spec: $(basename "$f")"
+        rm "$f"
+    fi
+done
 
 # Copy credentials into workspace (with --userns=keep-id, ownership is preserved).
 if [ -n "${cred_src:-}" ]; then
