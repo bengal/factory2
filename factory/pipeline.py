@@ -234,6 +234,19 @@ def _run_verify(config, story_id, spec_file, story_dir, log_dir, state):
         return True
 
     template = (config.prompts_dir / "verify.md").read_text()
+
+    # 1. Environment snapshot — so the agent knows what's available
+    env_info = _probe_environment(config.project_dir)
+
+    # 2. Pre-run cargo test — give the agent structured failure info upfront
+    test_passed, test_output = cargo.test_verbose(config.project_dir)
+
+    # 3. Git diff — so the agent knows what changed
+    diff_stat = subprocess.run(
+        ["git", "diff", "--stat", "HEAD"],
+        cwd=config.project_dir, capture_output=True, text=True,
+    ).stdout.strip()
+
     prompt = (
         f"{template}\n\n"
         f"## Your Task\n\n"
@@ -241,8 +254,27 @@ def _run_verify(config, story_id, spec_file, story_dir, log_dir, state):
         f"- The project code is in: {config.project_dir}/\n"
         f"- Write your results summary to: {output_file}\n"
         f"- Maximum fix attempts: {config.max_retries}\n\n"
-        f"## Specification (for reference)\n\n{spec_file.read_text()}"
+        f"## Environment\n\n{env_info}\n\n"
     )
+
+    if diff_stat:
+        prompt += f"## Changed Files (since last commit)\n\n```\n{diff_stat}\n```\n\n"
+
+    if test_passed:
+        prompt += (
+            "## Initial Test Run\n\n"
+            "All tests passed. Run `cargo clippy`, fix any warnings, "
+            "and write the results summary.\n\n"
+        )
+    else:
+        prompt += (
+            f"## Initial Test Run (FAILED)\n\n"
+            f"Tests were run before your session. Here are the results:\n\n"
+            f"```\n{test_output}\n```\n\n"
+            f"Fix the failures above. Do NOT re-discover them — start fixing immediately.\n\n"
+        )
+
+    prompt += f"## Specification (for reference)\n\n{spec_file.read_text()}"
 
     return _run_phase(
         config, state, story_id, "verify", prompt,
@@ -344,3 +376,33 @@ def _run_commit(config, story_id, spec_file, story_dir, log_dir, state):
     else:
         log.warn(f"[{story_id}] Commit: failed — {result.stderr.strip()}")
         return False
+
+
+# ── Environment probe ──────────────────────────────────────────
+
+
+def _probe_environment(project_dir: Path) -> str:
+    """Probe the container environment and return a summary for the agent."""
+    lines = []
+
+    def _run(cmd: str) -> str:
+        r = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        return r.stdout.strip() or r.stderr.strip()
+
+    # Rust toolchain
+    lines.append(f"- Rust: {_run('rustc --version')}")
+    lines.append(f"- Cargo: {_run('cargo --version')}")
+
+    # System tools
+    for tool in ["gcc", "ip", "unshare", "sudo", "dnsmasq"]:
+        which = _run(f"which {tool} 2>/dev/null")
+        if which:
+            lines.append(f"- {tool}: {which}")
+        else:
+            lines.append(f"- {tool}: NOT available")
+
+    # User namespace support
+    userns = _run("unshare --user --net true 2>&1 && echo supported || echo unsupported")
+    lines.append(f"- User namespaces: {userns}")
+
+    return "\n".join(lines)

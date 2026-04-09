@@ -85,6 +85,19 @@ def test(project_dir: Path) -> CargoResult:
     )
 
 
+def test_verbose(project_dir: Path) -> tuple[bool, str]:
+    """Run cargo test with human-readable output. Returns (success, output)."""
+    proc = subprocess.run(
+        ["cargo", "test"],
+        cwd=project_dir, capture_output=True, text=True,
+    )
+    output = proc.stdout + proc.stderr
+    # Trim to last 4k chars to keep prompt size reasonable
+    if len(output) > 4000:
+        output = "...(truncated)\n" + output[-4000:]
+    return proc.returncode == 0, output
+
+
 def clippy(project_dir: Path) -> CargoResult:
     """Run cargo clippy with JSON output, return structured result."""
     cmd = [
