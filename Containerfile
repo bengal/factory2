@@ -42,7 +42,6 @@ RUN rm -rf \
     /usr/lib/python3.11/idlelib \
     /usr/lib/python3.11/tkinter \
     /usr/lib/python3.11/ensurepip \
-    /usr/lib/gcc \
     /var/lib/dpkg \
     /var/lib/apt \
     /var/cache
