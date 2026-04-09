@@ -41,6 +41,11 @@ def generate_context(config: Config) -> str:
     if api:
         sections.append(f"### Public API\n\n{api}")
 
+    # Rust version constraint
+    rust_ver = _rust_version(project)
+    if rust_ver:
+        sections.append(f"### Rust Version\n\nMinimum supported Rust version (MSRV): **{rust_ver}**. Do not add dependencies that require a newer rustc.")
+
     # Dependencies
     deps = _dependencies(project)
     if deps:
@@ -160,6 +165,22 @@ def _extract_signatures(path: Path) -> list[str]:
                 break
 
     return sigs
+
+
+def _rust_version(project: Path) -> str:
+    """Extract rust-version from workspace Cargo.toml."""
+    cargo_toml = project / "Cargo.toml"
+    if not cargo_toml.exists():
+        return ""
+    try:
+        for line in cargo_toml.read_text().splitlines():
+            if line.strip().startswith("rust-version"):
+                # rust-version = "1.86"
+                _, _, val = line.partition("=")
+                return val.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return ""
 
 
 def _dependencies(project: Path) -> str:
