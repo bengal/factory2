@@ -57,14 +57,65 @@ def generate_context(config: Config) -> str:
     return "## Codebase Context\n\n" + "\n\n".join(sections) + "\n"
 
 
+def _find_source_roots(project: Path) -> list[tuple[str, Path]]:
+    """Find all Rust source roots in a project.
+
+    Returns a list of (label, src_path) tuples.  For a simple crate this
+    is [("", project/src)].  For a Cargo workspace it returns one entry
+    per member crate whose src/ directory exists, labelled by the member
+    path (e.g. "crates/netfyr-state").
+    """
+    # Check for workspace members in Cargo.toml
+    cargo_toml = project / "Cargo.toml"
+    members = []
+    if cargo_toml.exists():
+        in_members = False
+        try:
+            for line in cargo_toml.read_text().splitlines():
+                stripped = line.strip()
+                if stripped.startswith("members"):
+                    in_members = True
+                    continue
+                if in_members:
+                    if stripped == "]":
+                        break
+                    # Extract quoted path:  "crates/foo",
+                    m = re.match(r'"([^"]+)"', stripped)
+                    if m:
+                        members.append(m.group(1))
+        except OSError:
+            pass
+
+    if members:
+        roots = []
+        for member in members:
+            src = project / member / "src"
+            if src.is_dir():
+                roots.append((member, src))
+        if roots:
+            return roots
+
+    # Fallback: single-crate project
+    src = project / "src"
+    if src.is_dir():
+        return [("", src)]
+
+    return []
+
+
 def _module_tree(project: Path) -> str:
     """Build a visual tree of Rust source files."""
-    src = project / "src"
-    if not src.exists():
+    src_dirs = _find_source_roots(project)
+    if not src_dirs:
         return ""
 
     lines = []
-    _tree_walk(src, "", lines, is_last=True, is_root=True)
+    for i, (label, src) in enumerate(src_dirs):
+        if label:
+            lines.append(f"{label}/")
+        _tree_walk(src, "", lines, is_last=(i == len(src_dirs) - 1), is_root=(not label))
+        if i < len(src_dirs) - 1:
+            lines.append("")
     return "\n".join(lines)
 
 
@@ -115,17 +166,18 @@ def _extract_top_level_items(path: Path) -> list[str]:
 
 def _public_api(project: Path) -> str:
     """Extract public API signatures from all Rust source files."""
-    src = project / "src"
-    if not src.exists():
+    src_dirs = _find_source_roots(project)
+    if not src_dirs:
         return ""
 
     sections = []
-    for rs_file in sorted(src.rglob("*.rs")):
-        sigs = _extract_signatures(rs_file)
-        if sigs:
-            rel = rs_file.relative_to(project)
-            sig_text = "\n".join(f"  {s}" for s in sigs)
-            sections.append(f"```rust\n// {rel}\n{sig_text}\n```")
+    for _label, src in src_dirs:
+        for rs_file in sorted(src.rglob("*.rs")):
+            sigs = _extract_signatures(rs_file)
+            if sigs:
+                rel = rs_file.relative_to(project)
+                sig_text = "\n".join(f"  {s}" for s in sigs)
+                sections.append(f"```rust\n// {rel}\n{sig_text}\n```")
 
     return "\n\n".join(sections)
 
@@ -184,17 +236,33 @@ def _rust_version(project: Path) -> str:
 
 
 def _dependencies(project: Path) -> str:
-    """Extract [dependencies] section from Cargo.toml."""
-    cargo_toml = project / "Cargo.toml"
-    if not cargo_toml.exists():
-        return ""
+    """Extract [dependencies] sections from Cargo.toml files."""
+    parts = []
 
+    # Root Cargo.toml
+    root_deps = _extract_deps_from_toml(project / "Cargo.toml")
+    if root_deps:
+        parts.append(f"# (root)\n{root_deps}")
+
+    # Workspace member Cargo.toml files
+    for _label, src in _find_source_roots(project):
+        member_toml = src.parent / "Cargo.toml"
+        if member_toml.exists():
+            deps = _extract_deps_from_toml(member_toml)
+            if deps:
+                rel = member_toml.relative_to(project)
+                parts.append(f"# {rel}\n{deps}")
+
+    return "\n\n".join(parts)
+
+
+def _extract_deps_from_toml(cargo_toml: Path) -> str:
+    """Extract [dependencies] section from a single Cargo.toml."""
     try:
         text = cargo_toml.read_text()
     except OSError:
         return ""
 
-    # Simple extraction — find [dependencies] section
     lines = []
     in_deps = False
     for line in text.splitlines():
