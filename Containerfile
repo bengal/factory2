@@ -6,7 +6,7 @@ RUN dnf install -y \
     rpm-build rpmlint cargo-rpm-macros systemd-rpm-macros \
     nodejs npm \
     python3 \
-    jq git sudo \
+    jq git sudo which \
     iproute iptables-nft \
     gcc \
     && dnf clean all
