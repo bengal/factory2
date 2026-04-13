@@ -30,6 +30,7 @@ Factory options:
   --max-turns N            Max turns per agent run (default: 100)
   --verify-turns N         Max turns for verify phase (default: 120)
   -v, --verbose            Stream agent output to terminal in real time
+  --rerun STORY [...]      Force reprocessing of specific stories
 
 Authentication: set EITHER Anthropic API key OR Vertex AI env vars before running.
 For Qwen backend, run 'qwen auth' once locally; credentials in ~/.qwen/ are auto-copied.

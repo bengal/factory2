@@ -1,21 +1,15 @@
-FROM rust:1.86-bookworm
+FROM fedora:42
 
-# Install Node.js (required for Claude Code CLI) and Python
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
-    apt-get install -y nodejs
-
-RUN apt-get update && apt-get install -y \
+# Install Rust toolchain, RPM build tooling, and system packages
+RUN dnf install -y \
+    rust cargo clippy rustfmt \
+    rpm-build rpmlint rust-packaging systemd-rpm-macros \
+    nodejs npm \
     python3 \
-    python3-pip \
-    jq \
-    git \
-    sudo \
-    iproute2 \
-    iptables \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Rust tooling
-RUN rustup component add clippy rustfmt rust-analyzer
+    jq git sudo \
+    iproute iptables-nft \
+    gcc \
+    && dnf clean all
 
 # Install coding agent CLIs
 RUN npm install -g @anthropic-ai/claude-code @qwen-code/qwen-code && \
@@ -28,22 +22,12 @@ RUN rm -rf \
     /usr/share/doc \
     /usr/share/man \
     /usr/share/locale \
-    /usr/share/perl \
     /usr/share/perl5 \
     /usr/share/zoneinfo \
     /usr/share/mime \
     /usr/share/icons \
     /usr/share/X11 \
     /usr/include \
-    /usr/lib/node_modules/npm \
-    /usr/lib/python3/dist-packages \
-    /usr/lib/python3.11/test \
-    /usr/lib/python3.11/unittest \
-    /usr/lib/python3.11/idlelib \
-    /usr/lib/python3.11/tkinter \
-    /usr/lib/python3.11/ensurepip \
-    /var/lib/dpkg \
-    /var/lib/apt \
     /var/cache
 
 # Copy factory into image
@@ -58,7 +42,6 @@ RUN useradd -m -s /bin/bash factory && \
     echo "ALL ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/factory
 
 USER factory
-ENV PATH="/usr/local/cargo/bin:${PATH}"
 ENV NODE_COMPILE_CACHE=""
 
 WORKDIR /workspace
