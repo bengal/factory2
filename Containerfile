@@ -2,7 +2,7 @@ FROM fedora:42
 
 # Install Rust toolchain, RPM build tooling, and system packages
 RUN dnf install -y \
-    rust cargo clippy rustfmt \
+    rust cargo clippy rustfmt sccache \
     rpm-build rpmlint cargo-rpm-macros systemd-rpm-macros \
     nodejs npm \
     python3 \
@@ -43,6 +43,7 @@ RUN useradd -m -s /bin/bash factory && \
 
 USER factory
 ENV NODE_COMPILE_CACHE=""
+ENV RUSTC_WRAPPER=sccache
 
 WORKDIR /workspace
 
