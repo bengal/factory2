@@ -155,6 +155,7 @@ def _process_sequential(config: Config, state: State):
         # Process
         spec_file = config.specs_dir / f"{story_id}.md"
         state.set_spec_hash(story_id, spec_hash(spec_file))
+        state.clear_phases(story_id)
         state.set_story_status(story_id, "in_progress")
 
         if run_story_pipeline(config, story_id, spec_file, state):
@@ -218,6 +219,7 @@ def _process_parallel(config: Config, state: State):
                 if all(status_map.get(d) == "done" for d in deps):
                     spec_file = config.specs_dir / f"{sid}.md"
                     state.set_spec_hash(sid, spec_hash(spec_file))
+                    state.clear_phases(sid)
                     state.set_story_status(sid, "in_progress")
                     status_map[sid] = "running"
                     log.info(f"Launching parallel pipeline for {sid}")

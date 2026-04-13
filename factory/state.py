@@ -74,6 +74,13 @@ class State:
             }
         self._update(update)
 
+    def clear_phases(self, story_id: str):
+        """Reset all phase statuses so the story is fully reprocessed."""
+        def update(data):
+            story = self._ensure_story(data, story_id)
+            story.pop("phases", None)
+        self._update(update)
+
     # ── Spec hash ────────────────────────────────────────────────
 
     def get_spec_hash(self, story_id: str) -> str:
