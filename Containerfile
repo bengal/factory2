@@ -3,7 +3,7 @@ FROM fedora:42
 # Install Rust toolchain, RPM build tooling, and system packages
 RUN dnf install -y \
     rust cargo clippy rustfmt \
-    rpm-build rpmlint rust-packaging systemd-rpm-macros \
+    rpm-build rpmlint cargo-rpm-macros systemd-rpm-macros \
     nodejs npm \
     python3 \
     jq git sudo \
