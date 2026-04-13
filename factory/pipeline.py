@@ -233,6 +233,9 @@ def _run_verify(config, story_id, spec_file, story_dir, log_dir, state):
     if _phase_done(state, story_id, "verify", output_file):
         return True
 
+    # Remove stale results from a previous run so the agent can't be misled
+    output_file.unlink(missing_ok=True)
+
     template = (config.prompts_dir / "verify.md").read_text()
 
     # 1. Environment snapshot — so the agent knows what's available
