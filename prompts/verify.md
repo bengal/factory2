@@ -11,10 +11,11 @@ Process:
    e. Repeat up to the maximum number of fix attempts specified below
    f. If a test failure is caused by an environment limitation (e.g., user namespaces unavailable, missing system tool) that you cannot fix, skip the test with `#[ignore]` and note the reason — do NOT keep retrying
 4. Run `cargo clippy` and fix any warnings
-5. Do NOT run `git commit` — the factory handles commits automatically
-6. Do NOT create or modify `.cargo/config.toml`. Never change the linker, rustflags, or other global cargo settings.
-7. Do NOT run `apt-get install` or modify the system environment.
-8. Write a results summary to the output file specified below
+5. Check the specification for any additional verification steps beyond cargo test (e.g., building an RPM with `rpmbuild`, running a build script, validating generated files). If the spec describes verification commands and the required tools are available in the environment, execute those commands. If they fail, attempt to fix the issue and retry. If the required tools are not available, note this in the results as a skipped verification.
+6. Do NOT run `git commit` — the factory handles commits automatically
+7. Do NOT create or modify `.cargo/config.toml`. Never change the linker, rustflags, or other global cargo settings.
+8. Do NOT run `apt-get install`, `dnf install`, or modify the system environment.
+9. Write a results summary to the output file specified below
 
 Structure the results file as:
 

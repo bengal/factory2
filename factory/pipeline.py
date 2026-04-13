@@ -394,7 +394,7 @@ def _probe_environment(project_dir: Path) -> str:
     lines.append(f"- Cargo: {_run('cargo --version')}")
 
     # System tools
-    for tool in ["gcc", "ip", "unshare", "sudo", "dnsmasq"]:
+    for tool in ["gcc", "ip", "unshare", "sudo", "dnsmasq", "rpmbuild", "rpmlint"]:
         which = _run(f"which {tool} 2>/dev/null")
         if which:
             lines.append(f"- {tool}: {which}")
