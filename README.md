@@ -43,6 +43,15 @@ Run the factory again on the same workspace and it will:
 - Re-attempt quarantined and skipped stories (in case specs were fixed).
 - Re-run dependency analysis only if any spec file changed.
 
+To force reprocessing of specific stories (even if their spec hasn't changed):
+
+```bash
+python3 -m factory ./my-project --rerun 045-rpm-packaging
+python3 -m factory ./my-project --rerun 045-rpm-packaging 048-readme
+```
+
+This resets their status and phases, then runs the normal pipeline. Stories that depend on a rerun story are automatically invalidated and reprocessed too.
+
 ### Cost tracking
 
 Token usage (input and output) is tracked per story and per phase in `state.json`. The monitor displays totals with estimated cost.
@@ -134,6 +143,7 @@ usage: factory [-h] [-j PARALLEL] [-r RETRIES] [-m MODEL]
       --max-turns N      Max turns per Claude run (default: 80)
       --verify-turns N   Max turns for verify phase (default: 120)
   -v, --verbose          Stream Claude output to terminal in real time
+      --rerun STORY [STORY ...]  Force reprocessing of specific stories
   -h, --help             Show this help
 ```
 

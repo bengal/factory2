@@ -17,6 +17,7 @@ class Config:
     backend: str = "claude"    # "claude" or "qwen"
     cmd: str = "claude"        # CLI binary name/path
     skip_permissions: bool = True
+    rerun: list[str] = field(default_factory=list)
 
     @property
     def specs_dir(self) -> Path:

@@ -52,6 +52,10 @@ def main():
         "-v", "--verbose", action="store_true",
         help="Stream agent output to terminal in real time",
     )
+    parser.add_argument(
+        "--rerun", nargs="+", metavar="STORY",
+        help="Force reprocessing of the given story IDs (resets their status and phases)",
+    )
 
     args = parser.parse_args()
 
@@ -78,6 +82,7 @@ def main():
         backend=backend,
         cmd=cmd,
         skip_permissions=os.environ.get("SKIP_PERMISSIONS", "1") == "1",
+        rerun=args.rerun or [],
     )
 
     try:

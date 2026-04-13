@@ -24,6 +24,16 @@ def run_factory(config: Config):
 
     _check_prerequisites(config)
 
+    # Handle --rerun: reset specified stories so they are reprocessed
+    if config.rerun:
+        for sid in config.rerun:
+            if sid not in story_ids:
+                log.warn(f"--rerun: unknown story '{sid}', skipping")
+                continue
+            state.clear_phases(sid)
+            state.set_story_status(sid, "pending")
+            log.info(f"--rerun: reset {sid} for reprocessing")
+
     log.info("Factory starting")
     log.info(f"  Workspace:  {config.workspace}")
     log.info(f"  Stories:    {len(story_ids)}")
