@@ -164,7 +164,7 @@ fi
 
 # ─── Prepare Workspace ──────────────────────────────────────────────
 
-WORKSPACE="$OUTPUT_DIR/workspace"
+WORKSPACE="$OUTPUT_DIR"
 mkdir -p "$WORKSPACE/specs"
 
 # Reclaim ownership from previous container runs that used subuid remapping.
