@@ -103,6 +103,14 @@ def _estimate_cost(cost_entry: dict) -> float:
 # ── Status display ───────────────────────────────────────────────
 
 
+def _terminal_height() -> int:
+    """Return terminal height in lines, defaulting to 50."""
+    try:
+        return os.get_terminal_size().lines
+    except (OSError, ValueError):
+        return 50
+
+
 def show_status(workspace: Path):
     state_file = workspace / "state.json"
     if not state_file.exists():
@@ -145,7 +153,39 @@ def show_status(workspace: Path):
     print(header)
     print(f"  {DIM}{'─' * (name_width + 15 + 13 * len(phases) + 12 + 7)}{NC}")
 
-    for sid in sorted(stories.keys()):
+    # Decide which stories to show individually vs collapse
+    # Reserve lines: header(1) + separator(1) + summary banner(1) + totals(3) + footer(3) + top(5) = ~14
+    term_h = _terminal_height()
+    overhead_lines = 14
+    max_story_rows = max(term_h - overhead_lines, 8)
+
+    sorted_sids = sorted(stories.keys())
+
+    # Separate non-done (always shown) from done (collapsible)
+    non_done_sids = [sid for sid in sorted_sids if stories[sid].get("status", "pending") != "done"]
+    done_sids = [sid for sid in sorted_sids if stories[sid].get("status", "pending") == "done"]
+
+    # Each non-done story may need 2 lines (activity/reason), budget accordingly
+    non_done_lines = len(non_done_sids) * 2
+    remaining = max(max_story_rows - non_done_lines, 0)
+
+    if len(done_sids) + len(non_done_sids) * 2 <= max_story_rows:
+        # Everything fits — show all
+        visible_sids = sorted_sids
+        collapsed_count = 0
+    else:
+        # Collapse oldest done stories, keep most recent done visible
+        visible_done = done_sids[-remaining:] if remaining > 0 else []
+        collapsed_count = len(done_sids) - len(visible_done)
+        visible_sids = visible_done + non_done_sids
+        # Re-sort to maintain order
+        order = {sid: i for i, sid in enumerate(sorted_sids)}
+        visible_sids.sort(key=lambda sid: order[sid])
+
+    if collapsed_count > 0:
+        print(f"  {DIM}... {collapsed_count} completed stories hidden ...{NC}")
+
+    for sid in visible_sids:
         s = stories[sid]
         status = s.get("status", "pending")
 
