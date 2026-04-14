@@ -56,6 +56,10 @@ def main():
         "--rerun", nargs="+", metavar="STORY",
         help="Force reprocessing of the given story IDs (resets their status and phases)",
     )
+    parser.add_argument(
+        "--llm-deps", action="store_true",
+        help="Use LLM to analyze dependencies instead of parsing from spec files",
+    )
 
     args = parser.parse_args()
 
@@ -83,6 +87,7 @@ def main():
         cmd=cmd,
         skip_permissions=os.environ.get("SKIP_PERMISSIONS", "1") == "1",
         rerun=args.rerun or [],
+        llm_deps=args.llm_deps,
     )
 
     try:

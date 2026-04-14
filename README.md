@@ -15,7 +15,7 @@ specs/*.md ──► dependency analysis ──► per-story pipeline ──► 
                                             └─ commit (git commit with summary)
 ```
 
-1. **Dependency analysis** — an LLM run reads all specs and produces a dependency graph (`deps.json`), determining which stories must be implemented first.
+1. **Dependency analysis** — the factory parses `## Depends on` sections from each spec file to build a dependency graph (`deps.json`), determining which stories must be implemented first. This is deterministic and instant — no LLM call required.
 
 2. **Per-story pipeline** — each story passes through five phases, each a separate Claude Code invocation:
 
@@ -76,7 +76,7 @@ my-project/
     └── api-endpoints.md
 ```
 
-Each spec should include acceptance criteria:
+Each spec should include acceptance criteria and dependency declarations:
 
 ```markdown
 # User Authentication
@@ -91,7 +91,34 @@ access protected resources.
 - Returns 401 with an error message on invalid credentials
 - Passwords are verified against bcrypt hashes
 - Tokens expire after 24 hours
+
+## Depends on
+
+- SPEC-001 (Workspace setup)
+- SPEC-003 (Database models)
 ```
+
+### Dependency format
+
+The `## Depends on` section declares which stories must be implemented before this one. The factory parses this section to build the dependency graph — no LLM call is involved.
+
+**Format rules:**
+- Each dependency is a line containing `SPEC-NNN` where `NNN` is the numeric prefix of the story filename (e.g., `SPEC-007` matches `007-policy-types.md`)
+- The parenthesized description after the spec reference is optional and ignored by the parser — it's for human readers
+- Use `(none)` or leave the section empty for root stories with no dependencies
+- If specs form a cycle (A depends on B, B depends on A), the factory breaks it automatically by removing the edge from the higher-numbered story, and logs a warning so you can fix the spec
+
+**Examples:**
+```markdown
+## Depends on
+- SPEC-002 (Entity types)
+- SPEC-005
+
+## Depends on
+(none)
+```
+
+To use the old LLM-based analysis instead (sends all specs to an LLM in a single prompt), pass `--llm-deps`.
 
 ### 2. Run the factory
 
@@ -113,8 +140,8 @@ python3 -m factory ./my-project
 my-project/
 ├── specs/                  # your input (unchanged)
 ├── state.json              # pipeline state + cost tracking
-├── deps.md                 # dependency analysis (human-readable)
 ├── deps.json               # dependency graph (machine-readable)
+├── deps.md                 # dependency analysis (only with --llm-deps)
 ├── stories/
 │   └── auth/
 │       ├── understand.md   # gap analysis
@@ -133,7 +160,7 @@ my-project/
 ```
 usage: factory [-h] [-j PARALLEL] [-r RETRIES] [-m MODEL]
                [--light-model LIGHT_MODEL] [--max-turns MAX_TURNS]
-               [--verify-turns VERIFY_TURNS] [-v]
+               [--verify-turns VERIFY_TURNS] [-v] [--llm-deps]
                workspace
 
   -j, --parallel N       Max parallel story pipelines (default: 1)
@@ -144,6 +171,7 @@ usage: factory [-h] [-j PARALLEL] [-r RETRIES] [-m MODEL]
       --verify-turns N   Max turns for verify phase (default: 120)
   -v, --verbose          Stream Claude output to terminal in real time
       --rerun STORY [STORY ...]  Force reprocessing of specific stories
+      --llm-deps         Use LLM for dependency analysis instead of parsing specs
   -h, --help             Show this help
 ```
 
@@ -271,8 +299,30 @@ factory2/
 
 Edit the files in `prompts/` to adjust how Claude approaches each phase. The prompts are plain markdown — the orchestrator appends task-specific context (spec content, file paths, previous phase outputs) at the end before sending to Claude.
 
+## Scalability
+
+The factory is designed to handle large spec sets (100+ stories) efficiently.
+
+### What scales well
+
+- **Dependency analysis** is deterministic parsing, not an LLM call. It runs in milliseconds regardless of how many specs you have — no context window limits, no token cost.
+- **Incremental runs** skip stories whose spec hasn't changed. Editing one spec only re-runs that story and its downstream dependents.
+- **Parallel pipelines** (`-j N`) process independent stories concurrently, bounded by the dependency graph.
+- **Per-story prompts** include only the current spec and its prior phase output — adding more stories to the project doesn't increase prompt size for unrelated stories.
+
+### What to watch
+
+- **Codebase context snapshot.** Each phase prompt includes an auto-generated snapshot of the project's module tree, public API signatures, and dependencies (from `factory/context.py`). This grows with the total codebase size across all stories. At 100+ stories with many crates, this can become a significant portion of the context window. Consider splitting very large projects into separate workspaces.
+- **Dependency graph depth.** If you change a foundational story (e.g., the one that defines core types), every downstream story is invalidated and re-runs. Keep the graph shallow where possible — prefer many independent stories over deep chains.
+- **Parallel conflicts.** With `-j N > 1`, two stories modifying the same file can conflict. Sequential mode is safer for tightly coupled stories.
+
+### Tips for large projects
+
+- **Keep specs focused.** One concern per spec. Smaller specs = smaller transitive dependency closures = faster incremental rebuilds.
+- **Declare dependencies accurately.** The factory trusts your `## Depends on` sections. Missing a dependency may cause build failures; adding unnecessary ones slows incremental runs by over-invalidating.
+- **Use `--rerun` sparingly.** Re-running a story cascades to all dependents. Target specific stories rather than forcing a full rebuild.
+
 ## Limitations
 
 - Designed for Rust projects. Supporting other languages requires adjusting the prompts and the `cargo check` post-conditions in `factory/pipeline.py`.
 - Parallel mode (`-j N > 1`) can produce merge conflicts if two stories modify the same file. Sequential mode is safer for tightly coupled stories.
-- The LLM-based dependency analysis can miss implicit dependencies. Consider adding explicit `depends_on` declarations in your spec frontmatter for critical ordering.

@@ -8,6 +8,7 @@ from .deps import (
     get_dependencies,
     get_dependents,
     run_dependency_analysis,
+    run_llm_dependency_analysis,
     topo_sort,
 )
 from .pipeline import run_story_pipeline
@@ -43,7 +44,10 @@ def run_factory(config: Config):
     print("", flush=True)
 
     # Phase 1: dependency analysis
-    run_dependency_analysis(config, story_ids, state)
+    if config.llm_deps:
+        run_llm_dependency_analysis(config, story_ids, state)
+    else:
+        run_dependency_analysis(config, story_ids, state)
 
     # Phase 2: process stories
     if config.max_parallel > 1:

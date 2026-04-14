@@ -18,6 +18,7 @@ class Config:
     cmd: str = "claude"        # CLI binary name/path
     skip_permissions: bool = True
     rerun: list[str] = field(default_factory=list)
+    llm_deps: bool = False
 
     @property
     def specs_dir(self) -> Path:
