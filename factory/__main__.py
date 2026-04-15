@@ -60,6 +60,14 @@ def main():
         "--llm-deps", action="store_true",
         help="Use LLM to analyze dependencies instead of parsing from spec files",
     )
+    parser.add_argument(
+        "--git-author-name", default=None,
+        help="Git author name for commits (default: $GIT_AUTHOR_NAME or 'Factory')",
+    )
+    parser.add_argument(
+        "--git-author-email", default=None,
+        help="Git author email for commits (default: $GIT_AUTHOR_EMAIL or 'factory@localhost')",
+    )
 
     args = parser.parse_args()
 
@@ -88,6 +96,8 @@ def main():
         skip_permissions=os.environ.get("SKIP_PERMISSIONS", "1") == "1",
         rerun=args.rerun or [],
         llm_deps=args.llm_deps,
+        git_author_name=args.git_author_name or os.environ.get("GIT_AUTHOR_NAME", "Factory"),
+        git_author_email=args.git_author_email or os.environ.get("GIT_AUTHOR_EMAIL", "factory@localhost"),
     )
 
     try:

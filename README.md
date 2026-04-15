@@ -158,34 +158,45 @@ my-project/
 ## Options
 
 ```
-usage: factory [-h] [-j PARALLEL] [-r RETRIES] [-m MODEL]
-               [--light-model LIGHT_MODEL] [--max-turns MAX_TURNS]
-               [--verify-turns VERIFY_TURNS] [-v] [--llm-deps]
+usage: factory [-h] [-j PARALLEL] [-r RETRIES]
+               [--strong-model MODEL] [--default-model MODEL] [--fast-model MODEL]
+               [--max-turns N] [--verify-turns N] [-v] [--llm-deps]
+               [--git-author-name NAME] [--git-author-email EMAIL]
+               [--rerun STORY [STORY ...]]
                workspace
 
-  -j, --parallel N       Max parallel story pipelines (default: 1)
-  -r, --retries N        Max verify fix attempts per story (default: 3)
-  -m, --model MODEL      Model for implement/test/verify (default: claude-sonnet-4-6)
-      --light-model MODEL  Model for understand/plan/deps (default: claude-sonnet-4-6)
-      --max-turns N      Max turns per Claude run (default: 80)
-      --verify-turns N   Max turns for verify phase (default: 120)
-  -v, --verbose          Stream Claude output to terminal in real time
+  -j, --parallel N         Max parallel story pipelines (default: 1)
+  -r, --retries N          Max verify fix attempts per story (default: 3)
+      --strong-model MODEL Model for plan phase (default: claude-opus-4-6)
+      --default-model MODEL Model for understand, implement, write-tests, verify (default: claude-sonnet-4-6)
+      --fast-model MODEL   Model for dep analysis, summary, commit messages (default: claude-haiku-4-5-20251001)
+      --max-turns N        Max turns per Claude run (default: 100)
+      --verify-turns N     Max turns for verify phase (default: 120)
+  -v, --verbose            Stream Claude output to terminal in real time
       --rerun STORY [STORY ...]  Force reprocessing of specific stories
-      --llm-deps         Use LLM for dependency analysis instead of parsing specs
-  -h, --help             Show this help
+      --llm-deps           Use LLM for dependency analysis instead of parsing specs
+      --git-author-name    Git author name for commits (default: Factory)
+      --git-author-email   Git author email for commits (default: factory@localhost)
+  -h, --help               Show this help
 ```
 
 Examples:
 
 ```bash
-# Run with 4 parallel pipelines and opus for heavy phases
-python3 -m factory -j 4 -m claude-opus-4-6 ./my-project
+# Run with 4 parallel pipelines
+python3 -m factory -j 4 ./my-project
+
+# Use a stronger model for planning
+python3 -m factory --strong-model claude-opus-4-6 ./my-project
 
 # More retries for verify, higher turn budget
 python3 -m factory -r 5 --verify-turns 150 ./my-project
 
 # Watch what Claude is doing in real time
 python3 -m factory -v ./my-project
+
+# Set git author for commits
+python3 -m factory --git-author-name "My Bot" --git-author-email "bot@example.com" ./my-project
 ```
 
 ## Monitoring
