@@ -169,7 +169,7 @@ usage: factory [-h] [-j PARALLEL] [-r RETRIES]
   -r, --retries N          Max verify fix attempts per story (default: 3)
       --strong-model MODEL Model for plan phase (default: claude-opus-4-6)
       --default-model MODEL Model for understand, implement, write-tests, verify (default: claude-sonnet-4-6)
-      --fast-model MODEL   Model for dep analysis, summary, commit messages (default: claude-haiku-4-5-20251001)
+      --fast-model MODEL   Model for dep analysis, summary, commit messages (default: claude-haiku-4-5)
       --max-turns N        Max turns per Claude run (default: 100)
       --verify-turns N     Max turns for verify phase (default: 120)
   -v, --verbose            Stream Claude output to terminal in real time
