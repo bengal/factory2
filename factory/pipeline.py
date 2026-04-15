@@ -1,3 +1,4 @@
+import re
 import subprocess
 from pathlib import Path
 
@@ -6,6 +7,27 @@ from .config import Config
 from .context import generate_context
 from .runner import run_agent
 from .state import State
+
+
+def _format_model_display(model: str) -> str:
+    """Format model ID as display name: 'claude-sonnet-4-6' → 'Claude Sonnet 4.6'."""
+    m = model.lower()
+    for family in ("opus", "sonnet", "haiku"):
+        if family in m:
+            # Extract version: digits/hyphens after the family name
+            match = re.search(rf"{family}-(.+)", m)
+            version = match.group(1).replace("-", ".") if match else ""
+            name = f"Claude {family.capitalize()}"
+            if version:
+                name += f" {version}"
+            return name
+    return model
+
+
+def _co_author_trailer(model: str) -> str:
+    """Build a Co-Authored-By trailer for the given model."""
+    display = _format_model_display(model)
+    return f"Co-Authored-By: {display} <noreply@anthropic.com>"
 
 
 def run_story_pipeline(config: Config, story_id: str, spec_file: Path, state: State) -> bool:
@@ -192,7 +214,7 @@ def _run_implement(config, story_id, spec_file, story_dir, log_dir, state):
 
     return _run_phase(
         config, state, story_id, "implement", prompt,
-        log_dir / "implement.log", config.strong_model, config.max_turns,
+        log_dir / "implement.log", config.default_model, config.max_turns,
         post_check=cargo_check,
     )
 
@@ -363,8 +385,14 @@ def _run_commit(config, story_id, spec_file, story_dir, log_dir, state):
         commit_msg = f"{spec_title}\n\nStory: {story_id}"
         log.warn(f"[{story_id}] Commit: LLM did not produce message, using fallback")
 
+    # Append Co-Authored-By trailer for the model that wrote the code
+    trailer = _co_author_trailer(config.strong_model)
+    if trailer not in commit_msg:
+        commit_msg += f"\n\n{trailer}"
+
+    author = f"{config.git_author_name} <{config.git_author_email}>"
     result = subprocess.run(
-        ["git", "commit", "-q", "-m", commit_msg],
+        ["git", "commit", "-q", "-m", commit_msg, "--author", author],
         cwd=project_dir, capture_output=True, text=True,
     )
 

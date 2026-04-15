@@ -24,9 +24,9 @@ Everything after -- is passed through to the factory.
 Factory options:
   -j, --parallel N         Max parallel story pipelines (default: 1)
   -r, --retries N          Max verify fix attempts per story (default: 3)
-  --strong-model MODEL     Model for plan + implement (default: claude-sonnet-4-6)
-  --default-model MODEL    Model for understand, write-tests, verify (default: claude-sonnet-4-6)
-  --fast-model MODEL       Model for dep analysis, summary, commit messages (default: claude-sonnet-4-6)
+  --strong-model MODEL     Model for plan phase (default: claude-opus-4-6)
+  --default-model MODEL    Model for understand, implement, write-tests, verify (default: claude-sonnet-4-6)
+  --fast-model MODEL       Model for dep analysis, summary, commit messages (default: claude-haiku-4-5-20251001)
   --max-turns N            Max turns per agent run (default: 100)
   --verify-turns N         Max turns for verify phase (default: 120)
   -v, --verbose            Stream agent output to terminal in real time
