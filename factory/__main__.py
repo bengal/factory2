@@ -75,19 +75,20 @@ def main():
     default_cmd = "qwen" if backend == "qwen" else "claude"
     cmd = os.environ.get("FACTORY_CMD", os.environ.get("CLAUDE_CMD", default_cmd))
 
-    # Model defaults per backend
+    # Model defaults per backend — Config dataclass has per-tier defaults for claude;
+    # for qwen, collapse everything to the single qwen model name.
+    model_overrides = {}
     if backend == "qwen":
-        default_model = "coder-model"
-    else:
-        default_model = "claude-sonnet-4-6"
+        qwen_model = "coder-model"
+        model_overrides = dict(strong_model=qwen_model, default_model=qwen_model, fast_model=qwen_model)
 
     config = Config(
         workspace=args.workspace.resolve(),
         max_parallel=args.parallel,
         max_retries=args.retries,
-        strong_model=args.strong_model or default_model,
-        default_model=args.default_model or default_model,
-        fast_model=args.fast_model or default_model,
+        strong_model=args.strong_model or model_overrides.get("strong_model", Config.strong_model),
+        default_model=args.default_model or model_overrides.get("default_model", Config.default_model),
+        fast_model=args.fast_model or model_overrides.get("fast_model", Config.fast_model),
         max_turns=args.max_turns,
         verify_turns=args.verify_turns,
         verbose=args.verbose,
