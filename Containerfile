@@ -2,7 +2,7 @@ FROM fedora:42
 
 # Install Rust toolchain, RPM build tooling, and system packages
 RUN dnf install -y \
-    rust cargo clippy rustfmt sccache \
+    rust cargo clippy rustfmt sccache dnsmasq util-linux \
     rpm-build rpmlint cargo-rpm-macros systemd-rpm-macros \
     nodejs npm \
     python3 \
