@@ -183,17 +183,14 @@ usage: factory [-h] [-j PARALLEL] [-r RETRIES]
 Examples:
 
 ```bash
-# Run with 4 parallel pipelines
-python3 -m factory -j 4 ./my-project
-
-# Use a stronger model for planning
-python3 -m factory --strong-model claude-opus-4-6 ./my-project
+# Watch what Claude is doing in real time
+python3 -m factory -v ./my-project
 
 # More retries for verify, higher turn budget
 python3 -m factory -r 5 --verify-turns 150 ./my-project
 
-# Watch what Claude is doing in real time
-python3 -m factory -v ./my-project
+# Override model for a specific tier
+python3 -m factory --default-model claude-opus-4-6 ./my-project
 
 # Set git author for commits
 python3 -m factory --git-author-name "My Bot" --git-author-email "bot@example.com" ./my-project
@@ -214,19 +211,23 @@ python3 -m factory.monitor ./my-project tail auth
 python3 -m factory.monitor ./my-project once
 ```
 
-The dashboard shows per-story token usage and estimated cost:
+The dashboard shows per-story phase status, token usage, and estimated cost:
 ```
 Factory Status  14:23:07
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Total: 3  done:2  active:1  quarantined:0
+  Total: 3  done:2  in_progress:1
 
-  STORY                 STATUS         understand  plan        implement   write_tests verify         TOKENS
-  ────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  auth                  done           done        done        done        done        done           45K/12K
-  profile               in_progress    done        done        running     -           -              23K/8K
+  STORY                 STATUS         understand  plan        implement   write_tests verify      TOKENS   REQS
+  ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  auth                  done           done        done        done        done        done      120K/25K    42
+  profile               in_progress    done        done        running     -           -          68K/12K    23
+    └─ implement: Writing profile validation logic
   api                   pending        -           -           -           -           -
 
-  Total: 68K input, 20K output  (~$0.50 at Sonnet rates)
+  Total: 188K input (45K write, 95K read), 37K output  42 requests  (~$1.24)
+
+  Active logs:
+    stories/profile/log/implement.log (52KB)
 ```
 
 ## Running in a container
@@ -236,7 +237,7 @@ For isolated execution (or when tests need root capabilities like network namesp
 ```bash
 # Build and run
 export ANTHROPIC_API_KEY="sk-ant-..."  # or set Vertex AI vars
-./run_container.sh ./specs-dir -- -j 2
+./run_container.sh ./specs-dir
 
 # Options
 ./run_container.sh \
@@ -245,7 +246,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."  # or set Vertex AI vars
   -b \                     # force rebuild image
   -R podman \              # runtime: docker or podman (default: auto-detect)
   ./specs-dir \
-  -- -j 4 -m claude-opus-4-6   # factory options after --
+  -- --strong-model claude-opus-4-6   # factory options after --
 
 # Stop a running factory
 podman kill factory2-run    # or: docker kill factory2-run
@@ -284,22 +285,24 @@ export ANTHROPIC_VERTEX_PROJECT_ID=your-project-id
 factory2/
 ├── factory/                # Python package
 │   ├── __main__.py         # CLI entry point (argparse)
+│   ├── cargo.py            # Cargo check/test/clippy wrappers
 │   ├── config.py           # Config dataclass
-│   ├── log.py              # Colored logging
-│   ├── state.py            # JSON state with file locking + cost tracking
-│   ├── runner.py           # Claude CLI wrapper (streams output, parses usage)
+│   ├── context.py          # Codebase context snapshot generator
 │   ├── deps.py             # Dependency analysis + topological sort
-│   ├── pipeline.py         # 5-phase per-story pipeline + git commit
+│   ├── log.py              # Colored logging
+│   ├── monitor.py          # Live status dashboard
 │   ├── orchestrator.py     # Main loop (sequential + parallel)
-│   └── monitor.py          # Live status dashboard
+│   ├── pipeline.py         # 5-phase per-story pipeline + git commit
+│   ├── runner.py           # Claude CLI wrapper (streams output, parses usage)
+│   └── state.py            # JSON state with file locking + cost tracking
 ├── prompts/                # Prompt templates (plain markdown)
-│   ├── analyze_deps.md
 │   ├── understand.md
 │   ├── plan.md
 │   ├── implement.md
 │   ├── write_tests.md
 │   ├── verify.md
-│   └── summarize.md
+│   ├── summarize.md
+│   └── analyze_deps.md
 ├── pyproject.toml          # Python project config (no external deps)
 ├── Containerfile           # Container image definition
 ├── entrypoint.sh           # Container entry point
