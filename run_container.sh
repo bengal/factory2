@@ -173,6 +173,13 @@ if [ "$RUNTIME" = "podman" ]; then
     $RUNTIME unshare chown -R 0:0 "$WORKSPACE" 2>/dev/null || true
 fi
 
+# Snapshot current specs before overwriting (used by triage to compute diffs)
+rm -rf "$WORKSPACE/.specs-prev"
+if ls "$WORKSPACE/specs/"*.md &>/dev/null; then
+    mkdir -p "$WORKSPACE/.specs-prev"
+    cp "$WORKSPACE/specs/"*.md "$WORKSPACE/.specs-prev/"
+fi
+
 # Sync specs into workspace: copy new/updated specs, remove deleted ones.
 cp "$SPECS_DIR"/*.md "$WORKSPACE/specs/" || {
     echo "ERROR: No .md files found in $SPECS_DIR" >&2

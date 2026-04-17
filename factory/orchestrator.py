@@ -14,6 +14,7 @@ from .deps import (
 from .pipeline import run_story_pipeline
 from .runner import run_agent
 from .state import State, spec_hash, specs_combined_hash
+from .triage import compute_spec_diff, should_reprocess
 
 
 def run_factory(config: Config):
@@ -143,12 +144,17 @@ def _process_sequential(config: Config, state: State):
 
     # Pre-compute which stories need reprocessing, cascading to dependents
     needs_processing = set()
+    diff_cache = {}  # dep_id -> diff string (cached across stories)
     for sid in order:
         if _story_needs_processing(sid, config, state):
             needs_processing.add(sid)
         elif any(dep in needs_processing for dep in get_dependencies(sid, config.deps_file)):
-            needs_processing.add(sid)
-            log.info(f"Invalidating {sid}: dependency was reprocessed")
+            changed_deps = [d for d in get_dependencies(sid, config.deps_file) if d in needs_processing]
+            if _should_cascade(sid, changed_deps, config, diff_cache):
+                needs_processing.add(sid)
+                log.info(f"Invalidating {sid}: dependency change is relevant")
+            else:
+                log.info(f"Skipping {sid}: dependency change is irrelevant (triage)")
 
     for i, story_id in enumerate(order, 1):
         log.info(f"{'━' * 3} Story: {story_id} ({i}/{total}) {'━' * 3}")
@@ -191,6 +197,28 @@ def _process_sequential(config: Config, state: State):
     )
 
 
+def _should_cascade(story_id: str, changed_deps: list[str], config: Config, diff_cache: dict) -> bool:
+    """Check whether any changed dependency's diff is relevant to this story."""
+    for dep in changed_deps:
+        if dep not in diff_cache:
+            diff_cache[dep] = compute_spec_diff(dep, config)
+
+        diff = diff_cache[dep]
+        if diff is None:
+            # No stored copy — first run or new spec, must reprocess
+            return True
+        if diff == "":
+            # Spec unchanged (cascade-only invalidation), check transitive
+            continue
+
+        reprocess, reason = should_reprocess(story_id, dep, diff, config)
+        log.info(f"  Triage {story_id} vs {dep}: {'YES' if reprocess else 'NO'} — {reason}")
+        if reprocess:
+            return True
+
+    return False
+
+
 def _find_failed_dependency(story_id: str, deps_file: Path, state: State) -> str | None:
     for dep in get_dependencies(story_id, deps_file):
         status = state.get_story_status(dep)
@@ -207,12 +235,17 @@ def _process_parallel(config: Config, state: State):
 
     # Pre-compute which stories need reprocessing, cascading to dependents
     needs_processing = set()
+    diff_cache = {}
     for sid in order:
         if _story_needs_processing(sid, config, state):
             needs_processing.add(sid)
         elif any(dep in needs_processing for dep in get_dependencies(sid, config.deps_file)):
-            needs_processing.add(sid)
-            log.info(f"Invalidating {sid}: dependency was reprocessed")
+            changed_deps = [d for d in get_dependencies(sid, config.deps_file) if d in needs_processing]
+            if _should_cascade(sid, changed_deps, config, diff_cache):
+                needs_processing.add(sid)
+                log.info(f"Invalidating {sid}: dependency change is relevant")
+            else:
+                log.info(f"Skipping {sid}: dependency change is irrelevant (triage)")
 
     status_map = {}
     for sid in order:
