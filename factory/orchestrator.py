@@ -115,6 +115,17 @@ def _init_workspace(config: Config):
     if not gitignore.exists():
         gitignore.write_text(_STATE_GITIGNORE)
 
+    # Exclude state dir from the project repo so `git add -A` never stages it.
+    if config.state_dir.is_relative_to(config.project_dir):
+        project_gitignore = config.project_dir / ".gitignore"
+        entry = f"/{config.state_dir.relative_to(config.project_dir)}/"
+        if project_gitignore.exists():
+            content = project_gitignore.read_text()
+            if entry not in content.splitlines():
+                project_gitignore.write_text(content.rstrip("\n") + "\n" + entry + "\n")
+        else:
+            project_gitignore.write_text(entry + "\n")
+
     # Init Rust project
     if not (config.project_dir / "Cargo.toml").exists():
         log.info("Initializing Rust project")
