@@ -120,6 +120,49 @@ The `## Depends on` section declares which stories must be implemented before th
 
 To use the old LLM-based analysis instead (sends all specs to an LLM in a single prompt), pass `--llm-deps`.
 
+### Specification guidelines
+
+Each spec is processed in isolation — when the factory works on a story, it sees only that story's spec and the current codebase. It does not read other specs. This has important consequences for how specs should be written:
+
+**Self-contained stories.** Every rule, convention, or constraint that applies to a story must appear explicitly in that story's spec. If multiple stories share a common pattern (e.g., how integration tests are structured, how errors are handled, what naming conventions to follow), repeat those rules in every spec that needs them. Do not write "see SPEC-001 for test conventions" — the factory will not look at SPEC-001 while implementing SPEC-102. Copy the relevant sections verbatim.
+
+**Explicit test instructions.** If a story requires running integration tests (beyond `cargo test`), the spec must include:
+- The exact command to run (e.g., `make integration-test SPEC=102`)
+- What tools or prerequisites are needed (e.g., `unshare`, `dnsmasq`)
+- What to do if a prerequisite is missing (fail, not skip)
+- How to interpret results
+
+Without explicit instructions, the factory may skip tests or report success when test tools are unavailable.
+
+**Scoped verification.** Each story should only run tests related to the functionality it implements and the functionality it depends on. Do not run the entire test suite. Use filtering (e.g., `make integration-test SPEC=NNN` or `cargo test -p crate-name`) to limit test scope.
+
+The reason: when a spec is modified and the factory reprocesses an already-implemented story, the project may now contain code and tests from later stories. If an unrelated test from a later story is broken, it should be fixed when the factory processes that later story — not when it re-verifies the current one. Running the full test suite creates false failures that block progress.
+
+**Example of a well-structured spec:**
+
+```markdown
+# SPEC-102: Query Ethernet Interfaces
+
+## What
+Implement the query method for ethernet interfaces using rtnetlink.
+
+## Implementation details
+- Crate: netfyr-backend
+- Files: src/ethernet.rs
+- Dependencies: rtnetlink, tokio
+
+## Verification
+Run `cargo test -p netfyr-backend` and `make integration-test SPEC=102`.
+If `unshare` is not available, the integration test must print
+"FAIL: unshare not available" to stderr and exit 1 (never exit 0).
+
+## Acceptance criteria
+...
+
+## Depends on
+- SPEC-101 (Backend trait)
+```
+
 ### 2. Run the factory
 
 ```bash
@@ -294,7 +337,8 @@ factory2/
 │   ├── orchestrator.py     # Main loop (sequential + parallel)
 │   ├── pipeline.py         # 5-phase per-story pipeline + git commit
 │   ├── runner.py           # Claude CLI wrapper (streams output, parses usage)
-│   └── state.py            # JSON state with file locking + cost tracking
+│   ├── state.py            # JSON state with file locking + cost tracking
+│   └── triage.py           # Spec diff relevance check for cascade invalidation
 ├── prompts/                # Prompt templates (plain markdown)
 │   ├── understand.md
 │   ├── plan.md
@@ -327,7 +371,7 @@ The factory is designed to handle large spec sets (100+ stories) efficiently.
 ### What to watch
 
 - **Codebase context snapshot.** Each phase prompt includes an auto-generated snapshot of the project's module tree, public API signatures, and dependencies (from `factory/context.py`). This grows with the total codebase size across all stories. At 100+ stories with many crates, this can become a significant portion of the context window. Consider splitting very large projects into separate workspaces.
-- **Dependency graph depth.** If you change a foundational story (e.g., the one that defines core types), every downstream story is invalidated and re-runs. Keep the graph shallow where possible — prefer many independent stories over deep chains.
+- **Dependency graph depth.** If you change a foundational story (e.g., the one that defines core types), every downstream story is invalidated. The factory uses a triage step (Haiku) to check whether the spec diff is actually relevant to each dependent before reprocessing — irrelevant changes are skipped automatically. Still, keep the graph shallow where possible.
 - **Parallel conflicts.** With `-j N > 1`, two stories modifying the same file can conflict. Sequential mode is safer for tightly coupled stories.
 
 ### Tips for large projects
@@ -335,6 +379,7 @@ The factory is designed to handle large spec sets (100+ stories) efficiently.
 - **Keep specs focused.** One concern per spec. Smaller specs = smaller transitive dependency closures = faster incremental rebuilds.
 - **Declare dependencies accurately.** The factory trusts your `## Depends on` sections. Missing a dependency may cause build failures; adding unnecessary ones slows incremental runs by over-invalidating.
 - **Use `--rerun` sparingly.** Re-running a story cascades to all dependents. Target specific stories rather than forcing a full rebuild.
+- **Scope tests per story.** Each spec's verification section should run only its own tests (e.g., `make integration-test SPEC=NNN`), not the full suite. This prevents false failures from later stories when the factory reprocesses an earlier one.
 
 ## Limitations
 
