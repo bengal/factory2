@@ -95,11 +95,25 @@ def _validate(config: Config):
     log.info(f"Found {len(specs)} specification(s)")
 
 
+_STATE_GITIGNORE = """\
+state.json.lock
+.specs_hash
+.specs-prev/
+stories/*/log/
+stories/*/commit_msg.txt
+output/*.log
+"""
+
+
 def _init_workspace(config: Config):
     config.state_dir.mkdir(parents=True, exist_ok=True)
     config.stories_dir.mkdir(parents=True, exist_ok=True)
     config.project_dir.mkdir(parents=True, exist_ok=True)
     config.output_dir.mkdir(parents=True, exist_ok=True)
+
+    gitignore = config.state_dir / ".gitignore"
+    if not gitignore.exists():
+        gitignore.write_text(_STATE_GITIGNORE)
 
     # Init Rust project
     if not (config.project_dir / "Cargo.toml").exists():
