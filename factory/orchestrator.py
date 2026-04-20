@@ -127,7 +127,7 @@ def _init_workspace(config: Config):
     if not (config.project_dir / ".git").exists():
         log.info("Initializing git repository")
         author = f"{config.git_author_name} <{config.git_author_email}>"
-        subprocess.run(["git", "init", "-q"], cwd=config.project_dir, capture_output=True)
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=config.project_dir, capture_output=True)
         subprocess.run(["git", "add", "-A"], cwd=config.project_dir, capture_output=True)
         subprocess.run(
             ["git", "commit", "-q", "-m", "Initial project scaffold", "--author", author],
