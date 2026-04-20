@@ -139,7 +139,6 @@ AUTH_ARGS=()
 cred_src=""
 
 if [ "$BACKEND" = "qwen" ]; then
-    # Qwen credentials are copied into workspace below (after mkdir).
     # Pass API key if set (alternative to OAuth).
     [ -n "${DASHSCOPE_API_KEY:-}" ] && AUTH_ARGS+=(-e DASHSCOPE_API_KEY)
 elif [ -n "${CLAUDE_CODE_USE_VERTEX:-}" ]; then
@@ -150,11 +149,10 @@ elif [ -n "${CLAUDE_CODE_USE_VERTEX:-}" ]; then
     # Pass through optional Vertex env vars
     [ -n "${ANTHROPIC_VERTEX_REGION:-}" ]    && AUTH_ARGS+=(-e ANTHROPIC_VERTEX_REGION)
 
-    # Credentials are copied into the workspace after it's created (see below).
     if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ] && [ -f "${GOOGLE_APPLICATION_CREDENTIALS}" ]; then
-        cred_src="${GOOGLE_APPLICATION_CREDENTIALS}"
+        cred_src="$(realpath "${GOOGLE_APPLICATION_CREDENTIALS}")"
     elif [ -f "${HOME}/.config/gcloud/application_default_credentials.json" ]; then
-        cred_src="${HOME}/.config/gcloud/application_default_credentials.json"
+        cred_src="$(realpath "${HOME}/.config/gcloud/application_default_credentials.json")"
     else
         echo "WARN: No GCP credentials found. The container will rely on metadata-server / workload identity." >&2
     fi
@@ -173,16 +171,17 @@ if [ "$RUNTIME" = "podman" ]; then
     $RUNTIME unshare chown -R 0:0 "$PROJECT_DIR" 2>/dev/null || true
 fi
 
-# Copy credentials into project dir (with --userns=keep-id, ownership is preserved).
+# Mount credentials directly into the container (never copy into project dir).
 if [ -n "${cred_src:-}" ]; then
-    cp "$cred_src" "$PROJECT_DIR/.gcp-credentials.json"
-    AUTH_ARGS+=(-e GOOGLE_APPLICATION_CREDENTIALS=/workspace/.gcp-credentials.json)
+    AUTH_ARGS+=(-v "$cred_src:/run/secrets/gcp-credentials.json:ro,z")
+    AUTH_ARGS+=(-e GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp-credentials.json)
 fi
 
-# Copy Qwen OAuth credentials into project dir
 if [ "$BACKEND" = "qwen" ] && [ -f "${HOME}/.qwen/oauth_creds.json" ]; then
-    cp "${HOME}/.qwen/oauth_creds.json" "$PROJECT_DIR/.qwen-oauth-creds.json"
-    [ -f "${HOME}/.qwen/settings.json" ] && cp "${HOME}/.qwen/settings.json" "$PROJECT_DIR/.qwen-settings.json"
+    AUTH_ARGS+=(-v "$(realpath "${HOME}/.qwen/oauth_creds.json"):/run/secrets/qwen-oauth-creds.json:ro,z")
+    if [ -f "${HOME}/.qwen/settings.json" ]; then
+        AUTH_ARGS+=(-v "$(realpath "${HOME}/.qwen/settings.json"):/run/secrets/qwen-settings.json:ro,z")
+    fi
 fi
 
 # ─── Run ─────────────────────────────────────────────────────────────
