@@ -214,8 +214,8 @@ $RUNTIME run --rm \
     --cap-add=NET_ADMIN \
     --cap-add=SYS_ADMIN \
     "${USERNS_ARGS[@]+"${USERNS_ARGS[@]}"}" \
-    -v "$PROJECT_DIR:/workspace" \
-    -v "$SPECS_DIR:/specs:ro" \
+    -v "$PROJECT_DIR:/workspace:z" \
+    -v "$SPECS_DIR:/specs:ro,z" \
     "${AUTH_ARGS[@]}" \
     -e SKIP_PERMISSIONS="${SKIP_PERMISSIONS:-1}" \
     -e PYTHONPATH=/factory \
