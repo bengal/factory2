@@ -168,46 +168,100 @@ If `unshare` is not available, the integration test must print
 ```bash
 # Anthropic API
 export ANTHROPIC_API_KEY="sk-ant-..."
-python3 -m factory ./my-project
+python3 -m factory ./my-project --specs ./my-specs
 
 # OR Vertex AI
 export CLAUDE_CODE_USE_VERTEX=1
 export CLOUD_ML_REGION=us-east5
 export ANTHROPIC_VERTEX_PROJECT_ID=your-project-id
-python3 -m factory ./my-project
+python3 -m factory ./my-project --specs ./my-specs
 ```
 
 ### 3. Check results
 
+The generated project lives directly in the project directory. Factory state (pipeline progress, stories, logs) lives in `.factory/` inside the project:
+
 ```
-my-project/
-├── specs/                  # your input (unchanged)
-├── state.json              # pipeline state + cost tracking
-├── deps.json               # dependency graph (machine-readable)
-├── deps.md                 # dependency analysis (only with --llm-deps)
-├── stories/
-│   └── auth/
-│       ├── understand.md   # gap analysis
-│       ├── plan.md         # implementation plan
-│       ├── results.md      # test results
-│       └── log/            # raw Claude output per phase
-├── project/                # the generated Rust project (git repo)
-│   ├── Cargo.toml
-│   └── src/
-└── output/
-    └── summary.md          # combined summary of all stories
+my-project/                   # the generated Rust project (git repo)
+├── Cargo.toml
+├── src/
+├── tests/
+└── .factory/                 # factory state (add to .gitignore or use a separate branch)
+    ├── state.json            # pipeline state + cost tracking
+    ├── deps.json             # dependency graph (machine-readable)
+    ├── .specs-prev/          # spec snapshot for triage diffing
+    ├── stories/
+    │   └── auth/
+    │       ├── understand.md # gap analysis
+    │       ├── plan.md       # implementation plan
+    │       ├── results.md    # test results
+    │       └── log/          # raw Claude output per phase
+    └── output/
+        └── summary.md        # combined summary of all stories
+
+my-specs/                     # your input (unchanged, kept separate)
+├── auth.md
+├── user-profile.md
+└── api-endpoints.md
+```
+
+### Sharing factory state via a git branch
+
+If you want to version factory state (stories, plans, logs) without cluttering the project's main branch, use a git worktree:
+
+```bash
+# Initial setup (once)
+cd my-project
+
+# Create a new branch with no history (orphan = no parent commit).
+# This branch will hold only factory state, completely separate from
+# the project's commit history.
+git checkout --orphan factory-state
+
+# The orphan checkout still has the project's files staged.
+# Remove them — this branch should start empty.
+git rm -rf .
+git commit --allow-empty -m "Factory state branch"
+
+# Switch back to main so the project code is visible again.
+git checkout main
+
+# Attach the factory-state branch as a "worktree" at .factory/.
+# A worktree is a second working directory backed by the same repo
+# but checked out to a different branch. Writes to .factory/ are
+# tracked by the factory-state branch; writes to the project root
+# are tracked by main. One repo, two branches, two directories.
+git worktree add .factory factory-state
+
+# Run the factory — state goes to .factory/, code goes to project root
+python3 -m factory . --specs ../my-specs
+
+# The factory auto-commits state to the factory-state branch.
+# Push it separately:
+git -C .factory push origin factory-state
+```
+
+On a new machine, restore the worktree:
+
+```bash
+git clone <repo-url> my-project
+cd my-project
+git worktree add .factory factory-state
 ```
 
 ## Options
 
 ```
-usage: factory [-h] [-j PARALLEL] [-r RETRIES]
+usage: factory [-h] --specs DIR [--state-dir DIR]
+               [-j PARALLEL] [-r RETRIES]
                [--strong-model MODEL] [--default-model MODEL] [--fast-model MODEL]
                [--max-turns N] [--verify-turns N] [-v] [--llm-deps]
                [--git-author-name NAME] [--git-author-email EMAIL]
                [--rerun STORY [STORY ...]]
-               workspace
+               project-dir
 
+      --specs DIR          Directory containing .md spec files (required)
+      --state-dir DIR      Factory state directory (default: <project-dir>/.factory)
   -j, --parallel N         Max parallel story pipelines (default: 1)
   -r, --retries N          Max verify fix attempts per story (default: 3)
       --strong-model MODEL Model for plan phase (default: claude-opus-4-6)
@@ -227,16 +281,19 @@ Examples:
 
 ```bash
 # Watch what Claude is doing in real time
-python3 -m factory -v ./my-project
+python3 -m factory ./my-project --specs ./specs -v
 
 # More retries for verify, higher turn budget
-python3 -m factory -r 5 --verify-turns 150 ./my-project
+python3 -m factory ./my-project --specs ./specs -r 5 --verify-turns 150
 
 # Override model for a specific tier
-python3 -m factory --default-model claude-opus-4-6 ./my-project
+python3 -m factory ./my-project --specs ./specs --default-model claude-opus-4-6
 
 # Set git author for commits
-python3 -m factory --git-author-name "My Bot" --git-author-email "bot@example.com" ./my-project
+python3 -m factory ./my-project --specs ./specs --git-author-name "My Bot" --git-author-email "bot@example.com"
+
+# Use a custom state directory
+python3 -m factory ./my-project --specs ./specs --state-dir ./my-state
 ```
 
 ## Monitoring
@@ -245,6 +302,7 @@ While the factory is running, open a second terminal:
 
 ```bash
 # Live dashboard — refreshes every 2s with per-story, per-phase status and costs
+# (auto-detects .factory/ inside the project directory)
 python3 -m factory.monitor ./my-project
 
 # Tail logs for a specific story
@@ -284,7 +342,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."  # or set Vertex AI vars
 
 # Options
 ./run_container.sh \
-  -o ./output-dir \        # workspace/output location (default: ./factory-output)
+  -o ./output-dir \        # project/output location (default: ./factory-output)
   -i my-image \            # image name (default: factory2)
   -b \                     # force rebuild image
   -R podman \              # runtime: docker or podman (default: auto-detect)
@@ -299,7 +357,7 @@ The container runs with `--cap-add=NET_ADMIN --cap-add=SYS_ADMIN` instead of `--
 
 ### Vertex AI in containers
 
-The container script auto-copies GCP credentials into the workspace:
+The container script auto-copies GCP credentials into the project directory:
 
 ```bash
 export CLAUDE_CODE_USE_VERTEX=1

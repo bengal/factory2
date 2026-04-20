@@ -22,7 +22,7 @@ def run_factory(config: Config):
     _validate(config)
     _init_workspace(config)
     story_ids = _discover_stories(config)
-    state = State(config.workspace)
+    state = State(config.state_dir)
 
     _check_prerequisites(config)
 
@@ -37,7 +37,9 @@ def run_factory(config: Config):
             log.info(f"--rerun: reset {sid} for reprocessing")
 
     log.info("Factory starting")
-    log.info(f"  Workspace:  {config.workspace}")
+    log.info(f"  Project:    {config.project_dir}")
+    log.info(f"  Specs:      {config.specs_dir}")
+    log.info(f"  State:      {config.state_dir}")
     log.info(f"  Stories:    {len(story_ids)}")
     log.info(f"  Parallel:   {config.max_parallel}")
     log.info(f"  Backend:    {config.backend}")
@@ -69,6 +71,12 @@ def run_factory(config: Config):
             f"{costs['output_tokens']:,} output"
         )
 
+    # Snapshot specs for next-run triage diffing
+    _snapshot_specs(config)
+
+    # Auto-commit state if state_dir has its own git context
+    _auto_commit_state(config)
+
     print("", flush=True)
     log.info(f"Factory complete. Results in {config.output_dir}/")
 
@@ -78,7 +86,7 @@ def run_factory(config: Config):
 
 def _validate(config: Config):
     if not config.specs_dir.is_dir():
-        raise SystemExit(f"No specs/ directory found in {config.workspace}")
+        raise SystemExit(f"Specs directory not found: {config.specs_dir}")
 
     specs = list(config.specs_dir.glob("*.md"))
     if not specs:
@@ -88,6 +96,7 @@ def _validate(config: Config):
 
 
 def _init_workspace(config: Config):
+    config.state_dir.mkdir(parents=True, exist_ok=True)
     config.stories_dir.mkdir(parents=True, exist_ok=True)
     config.project_dir.mkdir(parents=True, exist_ok=True)
     config.output_dir.mkdir(parents=True, exist_ok=True)
@@ -100,8 +109,8 @@ def _init_workspace(config: Config):
             cwd=config.project_dir, capture_output=True,
         )
 
-    # Init git repo
-    if not (config.project_dir / ".git").is_dir():
+    # Init git repo for the project
+    if not (config.project_dir / ".git").exists():
         log.info("Initializing git repository")
         author = f"{config.git_author_name} <{config.git_author_email}>"
         subprocess.run(["git", "init", "-q"], cwd=config.project_dir, capture_output=True)
@@ -350,7 +359,7 @@ def _generate_summary(config: Config, story_ids: list[str], state: State):
         log_file=log_file,
         model=config.fast_model,
         max_turns=config.max_turns,
-        workdir=config.workspace,
+        workdir=config.project_dir,
         backend=config.backend,
         cmd=config.cmd,
         skip_permissions=config.skip_permissions,
@@ -362,3 +371,61 @@ def _generate_summary(config: Config, story_ids: list[str], state: State):
         log.info(f"Summary written to {summary_file}")
     else:
         log.warn("Summary generation did not produce output file")
+
+
+# ── Spec snapshot & state auto-commit ───────────────────────────
+
+
+def _snapshot_specs(config: Config):
+    """Copy current specs to state_dir/.specs-prev/ for next-run triage diffing."""
+    import shutil
+
+    prev_dir = config.state_dir / ".specs-prev"
+    if prev_dir.exists():
+        shutil.rmtree(prev_dir)
+    prev_dir.mkdir(parents=True, exist_ok=True)
+
+    for spec_file in config.specs_dir.glob("*.md"):
+        shutil.copy2(spec_file, prev_dir / spec_file.name)
+
+
+def _auto_commit_state(config: Config):
+    """Auto-commit state_dir if it has its own git context (separate from project)."""
+    try:
+        state_root = subprocess.run(
+            ["git", "-C", str(config.state_dir), "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True,
+        )
+        project_root = subprocess.run(
+            ["git", "-C", str(config.project_dir), "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True,
+        )
+    except FileNotFoundError:
+        return
+
+    if state_root.returncode != 0:
+        return
+
+    state_git_root = state_root.stdout.strip()
+    project_git_root = project_root.stdout.strip() if project_root.returncode == 0 else ""
+
+    # Only auto-commit if state dir has its own separate git context
+    if state_git_root == project_git_root:
+        return
+
+    status = subprocess.run(
+        ["git", "-C", str(config.state_dir), "status", "--porcelain"],
+        capture_output=True, text=True,
+    )
+    if status.returncode != 0 or not status.stdout.strip():
+        return
+
+    subprocess.run(
+        ["git", "-C", str(config.state_dir), "add", "-A"],
+        capture_output=True, text=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(config.state_dir), "commit", "-q", "-m", "Update factory state"],
+        capture_output=True, text=True,
+    )
+    log.info("Auto-committed factory state")

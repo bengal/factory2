@@ -1,10 +1,13 @@
 """Live monitoring dashboard for the factory pipeline.
 
 Usage:
-    python -m factory.monitor <workspace>              # live dashboard
-    python -m factory.monitor <workspace> tail          # tail all active logs
-    python -m factory.monitor <workspace> tail story-id # tail one story's logs
-    python -m factory.monitor <workspace> once          # single status snapshot
+    python -m factory.monitor <project-dir>              # live dashboard
+    python -m factory.monitor <project-dir> tail          # tail all active logs
+    python -m factory.monitor <project-dir> tail story-id # tail one story's logs
+    python -m factory.monitor <project-dir> once          # single status snapshot
+
+The monitor auto-detects the state directory: it checks <path>/.factory/
+first, then falls back to <path> itself.
 """
 
 import argparse
@@ -111,8 +114,8 @@ def _terminal_height() -> int:
         return 50
 
 
-def show_status(workspace: Path):
-    state_file = workspace / "state.json"
+def show_status(state_dir: Path):
+    state_file = state_dir / "state.json"
     if not state_file.exists():
         print("Waiting for factory to start (no state.json yet)...")
         return
@@ -139,7 +142,7 @@ def show_status(workspace: Path):
     print()
 
     # Per-story table
-    stories_dir = workspace / "stories"
+    stories_dir = state_dir / "stories"
     phases = ["understand", "plan", "implement", "write_tests", "verify"]
 
     # Dynamic column width based on longest story ID, capped at 40
@@ -291,7 +294,7 @@ def show_status(workspace: Path):
                 age = time.time() - logf.stat().st_mtime
                 if age < 120:  # modified in last 2 minutes
                     size = logf.stat().st_size
-                    rel = logf.relative_to(workspace)
+                    rel = logf.relative_to(state_dir)
                     active.append((rel, size))
             except OSError:
                 pass
@@ -302,11 +305,11 @@ def show_status(workspace: Path):
                 print(f"    {CYAN}{rel}{NC} ({format_tokens(size)}B)")
 
 
-def dashboard_loop(workspace: Path):
+def dashboard_loop(state_dir: Path):
     try:
         while True:
             os.system("clear")
-            show_status(workspace)
+            show_status(state_dir)
             print(f"\n{DIM}Refreshing every 2s. Ctrl+C to stop.{NC}")
             time.sleep(2)
     except KeyboardInterrupt:
@@ -316,8 +319,8 @@ def dashboard_loop(workspace: Path):
 # ── Tail logs ────────────────────────────────────────────────────
 
 
-def tail_logs(workspace: Path, story_filter: str = ""):
-    stories_dir = workspace / "stories"
+def tail_logs(state_dir: Path, story_filter: str = ""):
+    stories_dir = state_dir / "stories"
     target = stories_dir / story_filter if story_filter else stories_dir
 
     if not target.exists():
@@ -343,7 +346,7 @@ def tail_logs(workspace: Path, story_filter: str = ""):
     try:
         subprocess.run(
             ["tail", "-F"] + [str(l) for l in logs],
-            cwd=workspace,
+            cwd=state_dir,
         )
     except KeyboardInterrupt:
         pass
@@ -352,9 +355,20 @@ def tail_logs(workspace: Path, story_filter: str = ""):
 # ── Main ─────────────────────────────────────────────────────────
 
 
+def _resolve_state_dir(path: Path) -> Path:
+    """Auto-detect the state directory from a given path.
+
+    Checks <path>/.factory/ first, then falls back to <path> itself.
+    """
+    factory_subdir = path / ".factory"
+    if (factory_subdir / "state.json").exists():
+        return factory_subdir
+    return path
+
+
 def main():
     parser = argparse.ArgumentParser(description="Factory pipeline monitor")
-    parser.add_argument("workspace", type=Path, help="Workspace directory")
+    parser.add_argument("path", type=Path, help="Project directory or state directory")
     parser.add_argument(
         "action", nargs="?", default="status",
         choices=["status", "tail", "once"],
@@ -363,14 +377,14 @@ def main():
     parser.add_argument("story_filter", nargs="?", default="", help="Filter to a specific story")
 
     args = parser.parse_args()
-    workspace = args.workspace.resolve()
+    state_dir = _resolve_state_dir(args.path.resolve())
 
     if args.action == "status":
-        dashboard_loop(workspace)
+        dashboard_loop(state_dir)
     elif args.action == "tail":
-        tail_logs(workspace, args.story_filter)
+        tail_logs(state_dir, args.story_filter)
     elif args.action == "once":
-        show_status(workspace)
+        show_status(state_dir)
 
 
 if __name__ == "__main__":

@@ -78,7 +78,7 @@ def _extract_dep_refs(spec_file: Path, prefix_map: dict[str, str]) -> list[str]:
 def run_dependency_analysis(config: Config, story_ids: list[str], state: State):
     """Parse deps from spec files, or skip if specs unchanged."""
     deps_file = config.deps_file
-    hash_file = config.workspace / ".specs_hash"
+    hash_file = config.state_dir / ".specs_hash"
 
     # Incremental: skip if specs haven't changed
     if deps_file.exists() and hash_file.exists():
@@ -122,7 +122,7 @@ def run_llm_dependency_analysis(config: Config, story_ids: list[str], state: Sta
         f"{prompt_template}\n\n"
         f"## Specifications\n{specs_section}\n\n"
         f"Write the dependency files to:\n"
-        f"- {config.workspace}/deps.md (human-readable analysis)\n"
+        f"- {config.state_dir}/deps.md (human-readable analysis)\n"
         f"- {deps_file} (machine-readable, format specified above)\n"
     )
 
@@ -134,7 +134,7 @@ def run_llm_dependency_analysis(config: Config, story_ids: list[str], state: Sta
         log_file=log_file,
         model=config.fast_model,
         max_turns=config.max_turns,
-        workdir=config.workspace,
+        workdir=config.project_dir,
         backend=config.backend,
         cmd=config.cmd,
         skip_permissions=config.skip_permissions,
@@ -155,7 +155,7 @@ def run_llm_dependency_analysis(config: Config, story_ids: list[str], state: Sta
             log.warn("deps.json has invalid structure, creating fallback")
             _create_fallback_deps(deps_file, story_ids)
 
-    hash_file = config.workspace / ".specs_hash"
+    hash_file = config.state_dir / ".specs_hash"
     hash_file.write_text(specs_combined_hash(config.specs_dir))
 
 

@@ -13,7 +13,7 @@ Arguments:
   specs-dir                Directory containing .md user story specifications
 
 Options:
-  -o, --output DIR         Output/workspace directory (default: ./factory-output)
+  -o, --output DIR         Output directory for project and state (default: ./factory-output)
   -i, --image NAME         Container image name (default: factory2)
   -b, --build              Force rebuild the container image
   -R, --runtime CMD        Container runtime: docker or podman (default: auto-detect)
@@ -164,46 +164,25 @@ fi
 
 # ─── Prepare Workspace ──────────────────────────────────────────────
 
-WORKSPACE="$OUTPUT_DIR"
-mkdir -p "$WORKSPACE/specs"
+PROJECT_DIR="$OUTPUT_DIR"
+mkdir -p "$PROJECT_DIR"
 
 # Reclaim ownership from previous container runs that used subuid remapping.
 # With --userns=keep-id this is only needed once to migrate old workspaces.
 if [ "$RUNTIME" = "podman" ]; then
-    $RUNTIME unshare chown -R 0:0 "$WORKSPACE" 2>/dev/null || true
+    $RUNTIME unshare chown -R 0:0 "$PROJECT_DIR" 2>/dev/null || true
 fi
 
-# Snapshot current specs before overwriting (used by triage to compute diffs)
-rm -rf "$WORKSPACE/.specs-prev"
-if ls "$WORKSPACE/specs/"*.md &>/dev/null; then
-    mkdir -p "$WORKSPACE/.specs-prev"
-    cp "$WORKSPACE/specs/"*.md "$WORKSPACE/.specs-prev/"
-fi
-
-# Sync specs into workspace: copy new/updated specs, remove deleted ones.
-cp "$SPECS_DIR"/*.md "$WORKSPACE/specs/" || {
-    echo "ERROR: No .md files found in $SPECS_DIR" >&2
-    exit 1
-}
-# Remove workspace specs that no longer exist in the source directory
-for f in "$WORKSPACE/specs/"*.md; do
-    [ -f "$f" ] || continue
-    if [ ! -f "$SPECS_DIR/$(basename "$f")" ]; then
-        echo "Removing deleted spec: $(basename "$f")"
-        rm "$f"
-    fi
-done
-
-# Copy credentials into workspace (with --userns=keep-id, ownership is preserved).
+# Copy credentials into project dir (with --userns=keep-id, ownership is preserved).
 if [ -n "${cred_src:-}" ]; then
-    cp "$cred_src" "$WORKSPACE/.gcp-credentials.json"
+    cp "$cred_src" "$PROJECT_DIR/.gcp-credentials.json"
     AUTH_ARGS+=(-e GOOGLE_APPLICATION_CREDENTIALS=/workspace/.gcp-credentials.json)
 fi
 
-# Copy Qwen OAuth credentials into workspace
+# Copy Qwen OAuth credentials into project dir
 if [ "$BACKEND" = "qwen" ] && [ -f "${HOME}/.qwen/oauth_creds.json" ]; then
-    cp "${HOME}/.qwen/oauth_creds.json" "$WORKSPACE/.qwen-oauth-creds.json"
-    [ -f "${HOME}/.qwen/settings.json" ] && cp "${HOME}/.qwen/settings.json" "$WORKSPACE/.qwen-settings.json"
+    cp "${HOME}/.qwen/oauth_creds.json" "$PROJECT_DIR/.qwen-oauth-creds.json"
+    [ -f "${HOME}/.qwen/settings.json" ] && cp "${HOME}/.qwen/settings.json" "$PROJECT_DIR/.qwen-settings.json"
 fi
 
 # ─── Run ─────────────────────────────────────────────────────────────
@@ -211,14 +190,14 @@ fi
 echo ""
 echo "Starting factory..."
 echo "  Specs:       $SPECS_DIR"
-echo "  Workspace:   $WORKSPACE"
+echo "  Project:     $PROJECT_DIR"
 echo "  Backend:     $BACKEND"
 echo "  Runtime:     $RUNTIME"
 echo "  Image:       $IMAGE_NAME"
 echo ""
 
-# Inject --backend into factory args
-FACTORY_ARGS=("--backend" "$BACKEND" "${FACTORY_ARGS[@]+"${FACTORY_ARGS[@]}"}")
+# Inject --backend and --specs into factory args
+FACTORY_ARGS=("--backend" "$BACKEND" "--specs" "/specs" "${FACTORY_ARGS[@]+"${FACTORY_ARGS[@]}"}")
 
 # Remove stale container with this name (from a previous interrupted run)
 $RUNTIME rm -f factory2-run 2>/dev/null || true
@@ -235,7 +214,8 @@ $RUNTIME run --rm \
     --cap-add=NET_ADMIN \
     --cap-add=SYS_ADMIN \
     "${USERNS_ARGS[@]+"${USERNS_ARGS[@]}"}" \
-    -v "$WORKSPACE:/workspace" \
+    -v "$PROJECT_DIR:/workspace" \
+    -v "$SPECS_DIR:/specs:ro" \
     "${AUTH_ARGS[@]}" \
     -e SKIP_PERMISSIONS="${SKIP_PERMISSIONS:-1}" \
     -e PYTHONPATH=/factory \
@@ -244,6 +224,6 @@ $RUNTIME run --rm \
 
 echo ""
 echo "Factory complete."
-echo "  Results:   $WORKSPACE/output/"
-echo "  Project:   $WORKSPACE/project/"
-echo "  State:     $WORKSPACE/state.json"
+echo "  Project:   $PROJECT_DIR/"
+echo "  State:     $PROJECT_DIR/.factory/"
+echo "  Results:   $PROJECT_DIR/.factory/output/"

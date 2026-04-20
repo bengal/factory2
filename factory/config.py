@@ -4,7 +4,9 @@ from pathlib import Path
 
 @dataclass
 class Config:
-    workspace: Path
+    project_dir: Path
+    specs_dir: Path
+    state_dir: Path
     factory_dir: Path = field(default_factory=lambda: Path(__file__).resolve().parent.parent)
     max_parallel: int = 1
     max_retries: int = 3
@@ -23,20 +25,12 @@ class Config:
     git_author_email: str = "factory@localhost"
 
     @property
-    def specs_dir(self) -> Path:
-        return self.workspace / "specs"
-
-    @property
-    def project_dir(self) -> Path:
-        return self.workspace / "project"
-
-    @property
     def stories_dir(self) -> Path:
-        return self.workspace / "stories"
+        return self.state_dir / "stories"
 
     @property
     def output_dir(self) -> Path:
-        return self.workspace / "output"
+        return self.state_dir / "output"
 
     @property
     def prompts_dir(self) -> Path:
@@ -44,8 +38,8 @@ class Config:
 
     @property
     def state_file(self) -> Path:
-        return self.workspace / "state.json"
+        return self.state_dir / "state.json"
 
     @property
     def deps_file(self) -> Path:
-        return self.workspace / "deps.json"
+        return self.state_dir / "deps.json"

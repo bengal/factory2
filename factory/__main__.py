@@ -13,8 +13,16 @@ def main():
         description="AI Software Factory — turns user stories into working Rust code.",
     )
     parser.add_argument(
-        "workspace", type=Path,
-        help="Workspace directory containing a specs/ subdirectory with .md user stories",
+        "project_dir", type=Path,
+        help="Project directory (where generated code lives)",
+    )
+    parser.add_argument(
+        "--specs", type=Path, required=True,
+        help="Directory containing .md user story specifications",
+    )
+    parser.add_argument(
+        "--state-dir", type=Path, default=None,
+        help="Factory state directory (default: <project-dir>/.factory)",
     )
     parser.add_argument(
         "-j", "--parallel", type=int, default=1,
@@ -71,6 +79,10 @@ def main():
 
     args = parser.parse_args()
 
+    project_dir = args.project_dir.resolve()
+    specs_dir = args.specs.resolve()
+    state_dir = args.state_dir.resolve() if args.state_dir else project_dir / ".factory"
+
     backend = args.backend
     default_cmd = "qwen" if backend == "qwen" else "claude"
     cmd = os.environ.get("FACTORY_CMD", os.environ.get("CLAUDE_CMD", default_cmd))
@@ -83,7 +95,9 @@ def main():
         model_overrides = dict(strong_model=qwen_model, default_model=qwen_model, fast_model=qwen_model)
 
     config = Config(
-        workspace=args.workspace.resolve(),
+        project_dir=project_dir,
+        specs_dir=specs_dir,
+        state_dir=state_dir,
         max_parallel=args.parallel,
         max_retries=args.retries,
         strong_model=args.strong_model or model_overrides.get("strong_model", Config.strong_model),

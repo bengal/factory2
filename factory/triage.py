@@ -40,7 +40,7 @@ def compute_spec_diff(spec_id: str, config: Config) -> str | None:
     Returns the diff string, or None if there is no snapshot (first run).
     """
     current = config.specs_dir / f"{spec_id}.md"
-    snapshot = config.workspace / ".specs-prev" / f"{spec_id}.md"
+    snapshot = config.state_dir / ".specs-prev" / f"{spec_id}.md"
 
     if not snapshot.exists():
         return None
@@ -102,7 +102,7 @@ def should_reprocess(
             input=prompt,
             capture_output=True,
             text=True,
-            cwd=config.workspace,
+            cwd=config.project_dir,
             timeout=60,
         )
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:

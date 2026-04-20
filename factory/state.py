@@ -6,9 +6,9 @@ from pathlib import Path
 
 
 class State:
-    def __init__(self, workspace: Path):
-        self.path = workspace / "state.json"
-        self.lock_path = workspace / "state.json.lock"
+    def __init__(self, state_dir: Path):
+        self.path = state_dir / "state.json"
+        self.lock_path = state_dir / "state.json.lock"
         if not self.path.exists():
             self._write_raw({"stories": {}})
 
