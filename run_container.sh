@@ -156,6 +156,13 @@ elif [ -n "${CLAUDE_CODE_USE_VERTEX:-}" ]; then
     else
         echo "WARN: No GCP credentials found. The container will rely on metadata-server / workload identity." >&2
     fi
+
+    # Outside GCE the metadata server (169.254.169.254) is unreachable.
+    # google-auth-library probes it on every auth and the TCP SYN hangs
+    # for minutes. Point it at localhost so the probe fails instantly.
+    if [ -n "$cred_src" ]; then
+        AUTH_ARGS+=(-e GCE_METADATA_HOST=0.0.0.0)
+    fi
 else
     AUTH_ARGS+=(-e ANTHROPIC_API_KEY)
 fi
