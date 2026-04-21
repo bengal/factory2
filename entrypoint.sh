@@ -17,7 +17,9 @@ fi
 # Fix git worktree absolute paths created on the host.
 # A worktree's .git file contains "gitdir: /host/path/.git/worktrees/name"
 # which doesn't exist inside the container. Rewrite to use /workspace.
+# On exit, reverse the rewrite so the host sees valid paths again.
 project_dir="${1:-/workspace}"
+_worktree_fixups=()
 for gitfile in "$project_dir"/.?*/.git "$project_dir"/*/.git; do
     [ -f "$gitfile" ] || continue
     gitdir=$(sed -n 's/^gitdir: //p' "$gitfile")
@@ -27,10 +29,23 @@ for gitfile in "$project_dir"/.?*/.git "$project_dir"/*/.git; do
     new_gitdir="$project_dir/.git/worktrees/$wt_name"
     [ -d "$new_gitdir" ] || continue
 
+    # Save original paths for restoration on exit
+    orig_back=$(cat "$new_gitdir/gitdir" 2>/dev/null || true)
+    _worktree_fixups+=("$gitfile|$gitdir|$new_gitdir/gitdir|$orig_back")
+
     # Rewrite the worktree's .git pointer
     echo "gitdir: $new_gitdir" > "$gitfile"
     # Rewrite the back-reference so git can find the worktree
     echo "$gitfile" > "$new_gitdir/gitdir"
 done
 
-exec python3 -m factory "$@"
+_restore_worktree_paths() {
+    for entry in "${_worktree_fixups[@]+"${_worktree_fixups[@]}"}"; do
+        IFS='|' read -r gitfile orig_gitdir backref_file orig_back <<< "$entry"
+        echo "gitdir: $orig_gitdir" > "$gitfile"
+        [ -n "$orig_back" ] && echo "$orig_back" > "$backref_file"
+    done
+}
+trap _restore_worktree_paths EXIT
+
+python3 -m factory "$@"
