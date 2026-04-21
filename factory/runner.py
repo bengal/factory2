@@ -166,18 +166,17 @@ def _extract_activity(obj) -> str | None:
             thought = block.get("thinking", "").strip()
             if thought:
                 first_line = thought.split("\n")[0]
-                if len(first_line) > 76:
-                    return first_line[:73] + "..."
+                if len(first_line) > 200:
+                    return first_line[:197] + "..."
                 return first_line
             return "Thinking..."
 
         if btype == "text":
             text = block.get("text", "").strip()
             if text:
-                # First line, truncated
                 first_line = text.split("\n")[0]
-                if len(first_line) > 80:
-                    return first_line[:77] + "..."
+                if len(first_line) > 200:
+                    return first_line[:197] + "..."
                 return first_line
 
     return None
@@ -204,18 +203,21 @@ def _format_tool_activity(name: str, inp: dict) -> str:
     if display == "Bash":
         cmd = inp.get("command", "")
         if cmd:
-            if len(cmd) > 60:
-                cmd = cmd[:57] + "..."
-            return f"$ {cmd}"
+            first_line = cmd.split("\n")[0]
+            if len(first_line) > 140:
+                first_line = first_line[:137] + "..."
+            return f"$ {first_line}"
         return "Bash"
 
     if display == "Grep":
         pattern = inp.get("pattern", "")
-        return f"Grep {pattern[:40]}" if pattern else "Grep"
+        path = inp.get("path", "")
+        suffix = f" in {path}" if path else ""
+        return f"Grep {pattern[:60]}{suffix}" if pattern else "Grep"
 
     if display == "Glob":
         pattern = inp.get("pattern", "")
-        return f"Glob {pattern[:40]}" if pattern else "Glob"
+        return f"Glob {pattern[:60]}" if pattern else "Glob"
 
     return display
 

@@ -237,7 +237,6 @@ def show_status(state_dir: Path):
                 try:
                     activity = activity_file.read_text().strip()
                     if activity:
-                        # Find current phase
                         cur_phase = ""
                         for p in phases:
                             ps = s.get("phases", {}).get(p, {}).get("status", "")
@@ -245,9 +244,20 @@ def show_status(state_dir: Path):
                                 cur_phase = p
                                 break
                         prefix = f"{cur_phase}: " if cur_phase else ""
-                        if len(prefix + activity) > 80:
-                            activity = activity[:80 - len(prefix)] + "..."
-                        print(f"  {DIM}  └─ {prefix}{activity}{NC}")
+                        full = prefix + activity
+                        try:
+                            term_w = os.get_terminal_size().columns
+                        except (OSError, ValueError):
+                            term_w = 120
+                        usable = term_w - 7  # "  └─ " prefix
+                        if len(full) <= usable:
+                            print(f"  {DIM}  └─ {full}{NC}")
+                        else:
+                            print(f"  {DIM}  └─ {full[:usable]}{NC}")
+                            remainder = full[usable:]
+                            if len(remainder) > usable:
+                                remainder = remainder[:usable - 3] + "..."
+                            print(f"  {DIM}     {remainder}{NC}")
                 except OSError:
                     pass
 
