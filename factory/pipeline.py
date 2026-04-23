@@ -334,13 +334,18 @@ def _run_commit(config, story_id, spec_file, story_dir, log_dir, state):
     # Stage all changes
     subprocess.run(["git", "add", "-A"], cwd=project_dir, check=True)
 
-    # Get diff stat (compact, not the full diff)
-    diff_stat = subprocess.run(
-        ["git", "diff", "--cached", "--stat"],
+    # Get the actual diff so the LLM sees what changed, not just which files
+    MAX_DIFF_LINES = 200
+    diff_full = subprocess.run(
+        ["git", "diff", "--cached"],
         cwd=project_dir, capture_output=True, text=True,
     ).stdout.strip()
+    diff_lines = diff_full.split("\n")
+    if len(diff_lines) > MAX_DIFF_LINES:
+        diff_text = "\n".join(diff_lines[:MAX_DIFF_LINES]) + "\n[... truncated]"
+    else:
+        diff_text = diff_full
 
-    # Build a lean prompt — spec title + diff stat only, no full diff
     spec_title = spec_file.read_text().split("\n")[0].lstrip("# ").strip()
 
     commit_msg_file = story_dir / "commit_msg.txt"
@@ -351,16 +356,18 @@ def _run_commit(config, story_id, spec_file, story_dir, log_dir, state):
         "- Line 1: subject (max 72 chars, imperative mood, no period, no prefix)\n"
         "- Line 2: blank\n"
         "- Body: 2-4 sentences explaining what was implemented and why\n"
+        "- Describe ONLY what the diff actually changes — do not infer or add details not present in the diff\n"
+        "- Wrap all body lines at 72 columns\n"
         f"- Last line: Story: {story_id}\n\n"
         f"Spec title: {spec_title}\n\n"
-        f"Diff stat:\n```\n{diff_stat}\n```\n\n"
+        f"Diff:\n```\n{diff_text}\n```\n\n"
         f"Write to: {commit_msg_file}\n"
     )
 
     success, usage = run_agent(
         prompt=prompt,
         log_file=log_dir / "commit.log",
-        model=config.fast_model,
+        model=config.default_model,
         max_turns=5,
         workdir=config.project_dir,
         backend=config.backend,
