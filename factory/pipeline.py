@@ -95,7 +95,7 @@ def _run_phase(
         model=model,
         max_turns=max_turns,
         workdir=config.project_dir,
-        backend=config.backend,
+
         cmd=config.cmd,
         skip_permissions=config.skip_permissions,
         verbose=config.verbose,
@@ -370,7 +370,7 @@ def _run_commit(config, story_id, spec_file, story_dir, log_dir, state):
         model=config.default_model,
         max_turns=5,
         workdir=config.project_dir,
-        backend=config.backend,
+
         cmd=config.cmd,
         skip_permissions=config.skip_permissions,
         verbose=config.verbose,

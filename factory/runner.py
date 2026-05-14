@@ -22,7 +22,6 @@ def run_agent(
     model: str,
     max_turns: int,
     workdir: Path,
-    backend: str = "claude",
     cmd: str = "claude",
     skip_permissions: bool = True,
     verbose: bool = False,
@@ -30,12 +29,9 @@ def run_agent(
 ) -> tuple[bool, Usage]:
     """Run a coding agent CLI in print mode. Returns (success, usage)."""
 
-    if backend == "qwen":
-        cmd_list = _build_qwen_cmd(cmd, model, max_turns, skip_permissions)
-    else:
-        cmd_list = _build_claude_cmd(cmd, model, max_turns, skip_permissions)
+    cmd_list = _build_claude_cmd(cmd, model, max_turns, skip_permissions)
 
-    log.info(f"  Agent ({backend}): model={model} max_turns={max_turns}")
+    log.info(f"  Agent: model={model} max_turns={max_turns}")
     log.info(f"  Log:    {log_file}")
 
     log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -97,22 +93,6 @@ def _build_claude_cmd(cmd, model, max_turns, skip_permissions):
     if skip_permissions:
         args.append("--dangerously-skip-permissions")
     args.append("-")  # read prompt from stdin
-    return args
-
-
-def _build_qwen_cmd(cmd, model, max_turns, skip_permissions):
-    args = [
-        cmd,
-        "-p", "-",  # read prompt from stdin
-        "--output-format", "stream-json",
-        "--model", model,
-        "--max-session-turns", str(max_turns),
-        "--allowed-tools",
-        "read_file", "write_file", "edit", "glob",
-        "grep_search", "run_shell_command",
-    ]
-    if skip_permissions:
-        args.append("--yolo")
     return args
 
 
@@ -184,23 +164,15 @@ def _extract_activity(obj) -> str | None:
 
 def _format_tool_activity(name: str, inp: dict) -> str:
     """Format a tool use into a short activity string."""
-    # Normalize qwen tool names
-    display = {
-        "read_file": "Read", "write_file": "Write", "edit": "Edit",
-        "glob": "Glob", "grep_search": "Grep",
-        "run_shell_command": "Bash",
-    }.get(name, name)
-
-    if display in ("Read", "Write", "Edit"):
+    if name in ("Read", "Write", "Edit"):
         path = inp.get("file_path", inp.get("path", ""))
         if path:
-            # Show just the filename or last 2 path components
             parts = path.rsplit("/", 2)
             short = "/".join(parts[-2:]) if len(parts) > 1 else path
-            return f"{display} {short}"
-        return display
+            return f"{name} {short}"
+        return name
 
-    if display == "Bash":
+    if name == "Bash":
         cmd = inp.get("command", "")
         if cmd:
             first_line = cmd.split("\n")[0]
@@ -209,17 +181,17 @@ def _format_tool_activity(name: str, inp: dict) -> str:
             return f"$ {first_line}"
         return "Bash"
 
-    if display == "Grep":
+    if name == "Grep":
         pattern = inp.get("pattern", "")
         path = inp.get("path", "")
         suffix = f" in {path}" if path else ""
         return f"Grep {pattern[:60]}{suffix}" if pattern else "Grep"
 
-    if display == "Glob":
+    if name == "Glob":
         pattern = inp.get("pattern", "")
         return f"Glob {pattern[:60]}" if pattern else "Glob"
 
-    return display
+    return name
 
 
 def _write_live_usage(path: Path, usage: Usage):

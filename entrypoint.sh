@@ -7,13 +7,6 @@ git config --global user.name "${GIT_AUTHOR_NAME:-Factory}" 2>/dev/null || true
 git config --global user.email "${GIT_AUTHOR_EMAIL:-factory@localhost}" 2>/dev/null || true
 git config --global --add safe.directory '*' 2>/dev/null || true
 
-# Set up Qwen Code credentials if mounted
-if [ -f /run/secrets/qwen-oauth-creds.json ]; then
-    mkdir -p ~/.qwen
-    cp /run/secrets/qwen-oauth-creds.json ~/.qwen/oauth_creds.json
-    [ -f /run/secrets/qwen-settings.json ] && cp /run/secrets/qwen-settings.json ~/.qwen/settings.json
-fi
-
 # Fix git worktree absolute paths created on the host.
 # A worktree's .git file contains "gitdir: /host/path/.git/worktrees/name"
 # which doesn't exist inside the container. Rewrite to use /workspace.

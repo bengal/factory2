@@ -16,7 +16,6 @@ class Config:
     max_turns: int = 100
     verify_turns: int = 120
     verbose: bool = False
-    backend: str = "claude"    # "claude" or "qwen"
     cmd: str = "claude"        # CLI binary name/path
     skip_permissions: bool = True
     rerun: list[str] = field(default_factory=list)

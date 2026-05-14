@@ -34,15 +34,15 @@ def main():
     )
     parser.add_argument(
         "--strong-model", default=None,
-        help="Model for plan + implement (default: auto per backend)",
+        help="Model for plan + implement (default: claude-opus-4-6)",
     )
     parser.add_argument(
         "--default-model", default=None,
-        help="Model for understand, write-tests, verify (default: auto per backend)",
+        help="Model for understand, write-tests, verify (default: claude-sonnet-4-6)",
     )
     parser.add_argument(
         "--fast-model", default=None,
-        help="Model for dep analysis + summary (default: auto per backend)",
+        help="Model for dep analysis + summary (default: claude-haiku-4-5)",
     )
     parser.add_argument(
         "--max-turns", type=int, default=100,
@@ -51,10 +51,6 @@ def main():
     parser.add_argument(
         "--verify-turns", type=int, default=120,
         help="Max turns for verify phase (default: 120)",
-    )
-    parser.add_argument(
-        "--backend", choices=["claude", "qwen"], default="claude",
-        help="Coding agent backend (default: claude)",
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true",
@@ -83,16 +79,7 @@ def main():
     specs_dir = args.specs.resolve()
     state_dir = args.state_dir.resolve() if args.state_dir else project_dir / ".factory"
 
-    backend = args.backend
-    default_cmd = "qwen" if backend == "qwen" else "claude"
-    cmd = os.environ.get("FACTORY_CMD", os.environ.get("CLAUDE_CMD", default_cmd))
-
-    # Model defaults per backend — Config dataclass has per-tier defaults for claude;
-    # for qwen, collapse everything to the single qwen model name.
-    model_overrides = {}
-    if backend == "qwen":
-        qwen_model = "coder-model"
-        model_overrides = dict(strong_model=qwen_model, default_model=qwen_model, fast_model=qwen_model)
+    cmd = os.environ.get("FACTORY_CMD", os.environ.get("CLAUDE_CMD", "claude"))
 
     config = Config(
         project_dir=project_dir,
@@ -100,13 +87,12 @@ def main():
         state_dir=state_dir,
         max_parallel=args.parallel,
         max_retries=args.retries,
-        strong_model=args.strong_model or model_overrides.get("strong_model", Config.strong_model),
-        default_model=args.default_model or model_overrides.get("default_model", Config.default_model),
-        fast_model=args.fast_model or model_overrides.get("fast_model", Config.fast_model),
+        strong_model=args.strong_model or Config.strong_model,
+        default_model=args.default_model or Config.default_model,
+        fast_model=args.fast_model or Config.fast_model,
         max_turns=args.max_turns,
         verify_turns=args.verify_turns,
         verbose=args.verbose,
-        backend=backend,
         cmd=cmd,
         skip_permissions=os.environ.get("SKIP_PERMISSIONS", "1") == "1",
         rerun=args.rerun or [],

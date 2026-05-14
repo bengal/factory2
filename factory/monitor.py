@@ -73,15 +73,12 @@ _MODEL_RATES = {
     "opus": (15, 18.75, 1.50, 75),
     "sonnet": (3, 3.75, 0.30, 15),
     "haiku": (0.80, 1.00, 0.08, 4),
-    "qwen": (0, 0, 0, 0),  # free tier (oauth) or negligible cost
 }
 
 
 def _model_tier(model: str) -> str:
-    """Map a model ID like 'claude-opus-4-6' or 'qwen3-coder-plus' to a tier name."""
+    """Map a model ID like 'claude-opus-4-6' to a tier name."""
     m = model.lower()
-    if "qwen" in m or m == "coder-model":
-        return "qwen"
     for tier in ("opus", "sonnet", "haiku"):
         if tier in m:
             return tier

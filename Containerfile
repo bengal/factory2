@@ -12,7 +12,7 @@ RUN dnf install -y \
     && dnf clean all
 
 # Install coding agent CLIs
-RUN npm install -g @anthropic-ai/claude-code @qwen-code/qwen-code && \
+RUN npm install -g @anthropic-ai/claude-code && \
     npm cache clean --force && \
     rm -rf /tmp/* /root/.npm /root/.cache
 

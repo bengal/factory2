@@ -135,7 +135,6 @@ def run_llm_dependency_analysis(config: Config, story_ids: list[str], state: Sta
         model=config.fast_model,
         max_turns=config.max_turns,
         workdir=config.project_dir,
-        backend=config.backend,
         cmd=config.cmd,
         skip_permissions=config.skip_permissions,
         verbose=config.verbose,

@@ -33,24 +33,19 @@ Factory options:
   --rerun STORY [...]      Force reprocessing of specific stories
 
 Authentication: set EITHER Anthropic API key OR Vertex AI env vars before running.
-For Qwen backend, run 'qwen auth' once locally; credentials in ~/.qwen/ are auto-copied.
 
-  # Anthropic API (claude backend)
+  # Anthropic API
   export ANTHROPIC_API_KEY="sk-ant-..."
 
-  # OR Vertex AI (claude backend)
+  # OR Vertex AI
   export CLAUDE_CODE_USE_VERTEX=1
   export CLOUD_ML_REGION=us-east5
   export ANTHROPIC_VERTEX_PROJECT_ID=my-project
-
-  # OR Qwen (qwen backend — uses ~/.qwen/oauth_creds.json)
-  export FACTORY_BACKEND=qwen
 
 Examples:
   ./run_container.sh ./my-specs
   ./run_container.sh ./my-specs -- -j 4 --strong-model claude-opus-4-6
   ./run_container.sh ./my-specs -o ./output -- -v --fast-model claude-haiku-4-5-20251001
-  FACTORY_BACKEND=qwen ./run_container.sh ./my-specs -- --model qwen3-coder-plus
 EOF
     exit 0
 }
@@ -63,7 +58,6 @@ FORCE_BUILD=false
 RUNTIME=""
 SPECS_DIR=""
 FACTORY_ARGS=()
-BACKEND="${FACTORY_BACKEND:-claude}"
 
 # ─── Parse Args ──────────────────────────────────────────────────────
 
@@ -123,12 +117,7 @@ fi
 
 # ─── Validate Environment ───────────────────────────────────────────
 
-if [ "$BACKEND" = "qwen" ]; then
-    if [ ! -f "${HOME}/.qwen/oauth_creds.json" ] && [ -z "${DASHSCOPE_API_KEY:-}" ]; then
-        echo "ERROR: Qwen backend requires either ~/.qwen/oauth_creds.json (run 'qwen auth') or DASHSCOPE_API_KEY" >&2
-        exit 1
-    fi
-elif [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${CLAUDE_CODE_USE_VERTEX:-}" ]; then
+if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${CLAUDE_CODE_USE_VERTEX:-}" ]; then
     echo "ERROR: Set ANTHROPIC_API_KEY or Vertex AI env vars (CLAUDE_CODE_USE_VERTEX, CLOUD_ML_REGION, ANTHROPIC_VERTEX_PROJECT_ID)" >&2
     exit 1
 fi
@@ -138,10 +127,7 @@ fi
 AUTH_ARGS=()
 cred_src=""
 
-if [ "$BACKEND" = "qwen" ]; then
-    # Pass API key if set (alternative to OAuth).
-    [ -n "${DASHSCOPE_API_KEY:-}" ] && AUTH_ARGS+=(-e DASHSCOPE_API_KEY)
-elif [ -n "${CLAUDE_CODE_USE_VERTEX:-}" ]; then
+if [ -n "${CLAUDE_CODE_USE_VERTEX:-}" ]; then
     AUTH_ARGS+=(-e CLAUDE_CODE_USE_VERTEX)
     AUTH_ARGS+=(-e CLOUD_ML_REGION)
     AUTH_ARGS+=(-e ANTHROPIC_VERTEX_PROJECT_ID)
@@ -184,26 +170,18 @@ if [ -n "${cred_src:-}" ]; then
     AUTH_ARGS+=(-e GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp-credentials.json)
 fi
 
-if [ "$BACKEND" = "qwen" ] && [ -f "${HOME}/.qwen/oauth_creds.json" ]; then
-    AUTH_ARGS+=(-v "$(realpath "${HOME}/.qwen/oauth_creds.json"):/run/secrets/qwen-oauth-creds.json:ro,z")
-    if [ -f "${HOME}/.qwen/settings.json" ]; then
-        AUTH_ARGS+=(-v "$(realpath "${HOME}/.qwen/settings.json"):/run/secrets/qwen-settings.json:ro,z")
-    fi
-fi
-
 # ─── Run ─────────────────────────────────────────────────────────────
 
 echo ""
 echo "Starting factory..."
 echo "  Specs:       $SPECS_DIR"
 echo "  Project:     $PROJECT_DIR"
-echo "  Backend:     $BACKEND"
 echo "  Runtime:     $RUNTIME"
 echo "  Image:       $IMAGE_NAME"
 echo ""
 
-# Inject --backend and --specs into factory args
-FACTORY_ARGS=("--backend" "$BACKEND" "--specs" "/specs" "${FACTORY_ARGS[@]+"${FACTORY_ARGS[@]}"}")
+# Inject --specs into factory args
+FACTORY_ARGS=("--specs" "/specs" "${FACTORY_ARGS[@]+"${FACTORY_ARGS[@]}"}")
 
 # Remove stale container with this name (from a previous interrupted run)
 $RUNTIME rm -f factory2-run 2>/dev/null || true

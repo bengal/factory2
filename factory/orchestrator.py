@@ -42,7 +42,6 @@ def run_factory(config: Config):
     log.info(f"  State:      {config.state_dir}")
     log.info(f"  Stories:    {len(story_ids)}")
     log.info(f"  Parallel:   {config.max_parallel}")
-    log.info(f"  Backend:    {config.backend}")
     log.info(f"  Models:     {config.strong_model} (strong), {config.default_model} (default), {config.fast_model} (fast)")
     print("", flush=True)
 
@@ -385,7 +384,6 @@ def _generate_summary(config: Config, story_ids: list[str], state: State):
         model=config.fast_model,
         max_turns=config.max_turns,
         workdir=config.project_dir,
-        backend=config.backend,
         cmd=config.cmd,
         skip_permissions=config.skip_permissions,
         verbose=config.verbose,
