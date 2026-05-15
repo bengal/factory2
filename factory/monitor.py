@@ -16,6 +16,7 @@ import os
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 # ── Colors ───────────────────────────────────────────────────────
@@ -41,12 +42,30 @@ STATUS_COLORS = {
 }
 
 
-def colored_status(s: str) -> str:
+def _format_duration(seconds: float) -> str:
+    minutes = int(seconds) // 60
+    if minutes < 1:
+        return f"{int(seconds)}s"
+    return f"{minutes}m"
+
+
+def colored_status(s: str, duration_s: float | None = None) -> str:
     color = STATUS_COLORS.get(s, "")
-    return f"{color}{s}{NC}"
+    label = s
+    if s == "done" and duration_s is not None:
+        label = f"done({_format_duration(duration_s)})"
+    return f"{color}{label}{NC}"
 
 
-def _ansi_overhead(s: str) -> int:
+def _visible_len(s: str, duration_s: float | None = None) -> int:
+    """Return the visible (non-ANSI) length of colored_status output."""
+    label = s
+    if s == "done" and duration_s is not None:
+        label = f"done({_format_duration(duration_s)})"
+    return len(label)
+
+
+def _ansi_overhead(s: str, duration_s: float | None = None) -> int:
     """Return the number of non-visible ANSI bytes added by colored_status()."""
     color = STATUS_COLORS.get(s, "")
     return len(color) + len(NC) if color else 0
@@ -192,8 +211,19 @@ def show_status(state_dir: Path):
         line = f"  {sid:<{name_width}}{colored_status(status):<{15 + _ansi_overhead(status)}}"
 
         for p in phases:
-            ps = s.get("phases", {}).get(p, {}).get("status", "-")
-            line += f"{colored_status(ps):<{13 + _ansi_overhead(ps)}}"
+            phase_data = s.get("phases", {}).get(p, {})
+            ps = phase_data.get("status", "-")
+            dur = None
+            if ps == "done" and phase_data.get("started_at") and phase_data.get("timestamp"):
+                try:
+                    t0 = datetime.fromisoformat(phase_data["started_at"])
+                    t1 = datetime.fromisoformat(phase_data["timestamp"])
+                    dur = (t1 - t0).total_seconds()
+                except (ValueError, TypeError):
+                    pass
+            vis = _visible_len(ps, dur)
+            pad = 13 - vis
+            line += colored_status(ps, dur) + " " * max(pad, 1)
 
         # Tokens (input = uncached + cache_write + cache_read)
         costs = s.get("costs", {})

@@ -68,10 +68,14 @@ class State:
 
         def update(data):
             story = self._ensure_story(data, story_id)
-            story.setdefault("phases", {})[phase] = {
-                "status": status,
-                "timestamp": ts,
-            }
+            phases = story.setdefault("phases", {})
+            prev = phases.get(phase, {})
+            entry = {"status": status, "timestamp": ts}
+            if status == "running":
+                entry["started_at"] = ts
+            elif prev.get("started_at"):
+                entry["started_at"] = prev["started_at"]
+            phases[phase] = entry
         self._update(update)
 
     def clear_phases(self, story_id: str):
