@@ -53,13 +53,25 @@ class CargoResult:
         return "\n".join(lines)
 
 
+_CHECK_TIMEOUT = 600
+_TEST_TIMEOUT = 900
+_CLIPPY_TIMEOUT = 600
+
+
 def check(project_dir: Path, tests: bool = False) -> CargoResult:
     """Run cargo check with JSON output, return structured result."""
     cmd = ["cargo", "check", "--message-format=json"]
     if tests:
         cmd.append("--tests")
 
-    proc = subprocess.run(cmd, cwd=project_dir, capture_output=True, text=True)
+    try:
+        proc = subprocess.run(
+            cmd, cwd=project_dir, capture_output=True, text=True,
+            timeout=_CHECK_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        log.warn(f"cargo check timed out after {_CHECK_TIMEOUT}s")
+        return CargoResult(success=False, diagnostics=[], error_count=1, warning_count=0)
     diagnostics = _parse_diagnostics(proc.stdout)
 
     return CargoResult(
@@ -74,7 +86,14 @@ def test(project_dir: Path) -> CargoResult:
     """Run cargo test with JSON output, return structured result."""
     cmd = ["cargo", "test", "--message-format=json", "--", "--format=terse"]
 
-    proc = subprocess.run(cmd, cwd=project_dir, capture_output=True, text=True)
+    try:
+        proc = subprocess.run(
+            cmd, cwd=project_dir, capture_output=True, text=True,
+            timeout=_TEST_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        log.warn(f"cargo test timed out after {_TEST_TIMEOUT}s")
+        return CargoResult(success=False, diagnostics=[], error_count=1, warning_count=0)
     diagnostics = _parse_diagnostics(proc.stdout)
 
     return CargoResult(
@@ -87,10 +106,15 @@ def test(project_dir: Path) -> CargoResult:
 
 def test_verbose(project_dir: Path) -> tuple[bool, str]:
     """Run cargo test with human-readable output. Returns (success, output)."""
-    proc = subprocess.run(
-        ["cargo", "test"],
-        cwd=project_dir, capture_output=True, text=True,
-    )
+    try:
+        proc = subprocess.run(
+            ["cargo", "test"],
+            cwd=project_dir, capture_output=True, text=True,
+            timeout=_TEST_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        log.warn(f"cargo test timed out after {_TEST_TIMEOUT}s")
+        return False, f"cargo test timed out after {_TEST_TIMEOUT}s"
     output = proc.stdout + proc.stderr
     # Trim to last 4k chars to keep prompt size reasonable
     if len(output) > 4000:
@@ -105,7 +129,14 @@ def clippy(project_dir: Path) -> CargoResult:
         "--", "-D", "warnings",
     ]
 
-    proc = subprocess.run(cmd, cwd=project_dir, capture_output=True, text=True)
+    try:
+        proc = subprocess.run(
+            cmd, cwd=project_dir, capture_output=True, text=True,
+            timeout=_CLIPPY_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        log.warn(f"cargo clippy timed out after {_CLIPPY_TIMEOUT}s")
+        return CargoResult(success=False, diagnostics=[], error_count=1, warning_count=0)
     diagnostics = _parse_diagnostics(proc.stdout)
 
     return CargoResult(
