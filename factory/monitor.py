@@ -43,17 +43,14 @@ STATUS_COLORS = {
 
 
 def _format_duration(seconds: float) -> str:
-    minutes = int(seconds) // 60
-    if minutes < 1:
-        return f"{int(seconds)}s"
-    return f"{minutes}m"
+    return f"{int(seconds)}s"
 
 
 def colored_status(s: str, duration_s: float | None = None) -> str:
     color = STATUS_COLORS.get(s, "")
     label = s
     if s == "done" and duration_s is not None:
-        label = f"done({_format_duration(duration_s)})"
+        label = f"✓ ({_format_duration(duration_s)})"
     return f"{color}{label}{NC}"
 
 
@@ -61,7 +58,7 @@ def _visible_len(s: str, duration_s: float | None = None) -> int:
     """Return the visible (non-ANSI) length of colored_status output."""
     label = s
     if s == "done" and duration_s is not None:
-        label = f"done({_format_duration(duration_s)})"
+        label = f"✓ ({_format_duration(duration_s)})"
     return len(label)
 
 
