@@ -37,6 +37,7 @@ def run_agent(
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
     usage = Usage()
+    result_seen = False
 
     with open(log_file, "w") as lf:
         proc = subprocess.Popen(
@@ -68,7 +69,15 @@ def run_agent(
                     if usage.input_tokens != old_in or usage.output_tokens != old_out:
                         _write_live_usage(activity_file.parent / "live_usage", usage)
 
-        proc.wait()
+                try:
+                    obj = json.loads(stripped)
+                    if isinstance(obj, dict) and obj.get("type") == "result":
+                        result_seen = True
+                        break
+                except json.JSONDecodeError:
+                    pass
+
+    _wait_or_terminate(proc, result_seen)
 
     if activity_file:
         activity_file.unlink(missing_ok=True)
@@ -78,6 +87,29 @@ def run_agent(
         log.error(f"  Agent exited with code {proc.returncode}")
 
     return proc.returncode == 0, usage
+
+
+_AGENT_EXIT_GRACE = 30
+
+
+def _wait_or_terminate(proc, result_seen):
+    """Wait for the agent to exit, terminating it if child processes hang."""
+    if not result_seen:
+        proc.wait()
+        return
+    try:
+        proc.wait(timeout=_AGENT_EXIT_GRACE)
+    except subprocess.TimeoutExpired:
+        log.warn(
+            f"  Agent still running {_AGENT_EXIT_GRACE}s after session ended,"
+            " terminating (likely hung child processes)"
+        )
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
 
 
 def _build_claude_cmd(cmd, model, max_turns, skip_permissions):
